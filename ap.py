@@ -192,7 +192,7 @@ if check_password():
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
 
-  # --- PAGE RÉSERVATIONS ---
+ # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
         st.title("📅 Gestion des Réservations")
         if os.path.exists(RESA_FILE):
