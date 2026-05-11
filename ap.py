@@ -9,21 +9,30 @@ st.set_page_config(page_title="RNM IMMO - Dashboard", layout="wide")
 CONFIG_FILE = "config_biens.csv"
 COMPTA_FILE = "compta_rnm_immo.csv"
 
+# Fonction de chargement sécurisée
 def load_data(file, columns):
     if os.path.exists(file):
-        return pd.read_csv(file)
+        df = pd.read_csv(file)
+        # Vérifie que toutes les colonnes attendues sont là
+        for col in columns:
+            if col not in df.columns:
+                df[col] = 0
+        return df
     return pd.DataFrame(columns=columns)
 
-# Chargement
-df_cfg = load_data(CONFIG_FILE, ["Bien", "Valeur Actuelle", "Credit Restant", "Mensualité"])
-df_compta = load_data(COMPTA_FILE, ["Date", "Type", "Source_Flux", "Montant", "Commentaire"])
+# Définition des structures
+cols_cfg = ["Bien", "Valeur Actuelle", "Credit Restant", "Mensualité"]
+cols_compta = ["Date", "Type", "Source_Flux", "Montant", "Commentaire"]
 
-# --- CALCULS PATRIMOINE (Ton dessin) ---
+df_cfg = load_data(CONFIG_FILE, cols_cfg)
+df_compta = load_data(COMPTA_FILE, cols_compta)
+
+# --- CALCULS (Ton dessin) ---
 nb_biens = len(df_cfg)
-patrimoine_brut = df_cfg["Valeur Actuelle"].sum()
-credits_encours = df_cfg["Credit Restant"].sum()
+patrimoine_brut = pd.to_numeric(df_cfg["Valeur Actuelle"]).sum()
+credits_encours = pd.to_numeric(df_cfg["Credit Restant"]).sum()
 
-# Calcul du Cash (Entrées - Sorties)
+# Calcul du Cash propre
 if not df_compta.empty:
     df_compta["Montant"] = pd.to_numeric(df_compta["Montant"], errors='coerce').fillna(0)
     cash_total = df_compta[df_compta["Type"] == "Revenu"]["Montant"].sum() - \
@@ -33,43 +42,56 @@ else:
 
 patrimoine_net = (patrimoine_brut + cash_total) - credits_encours
 
-# --- AFFICHAGE (Style ton schéma) ---
-st.title(f"🏛️ RNM IMMO")
-st.subheader(f"Total : {nb_biens} Biens Immobiliers")
+# --- INTERFACE ---
+st.title("🏛️ RNM IMMO")
+st.subheader(f"= {nb_biens} Biens immo")
 
-# Barre de metrics (La ligne violette de ton dessin)
-style_cols = st.columns(4)
-style_cols[0].metric("Patrimoine Brut Estimé", f"{patrimoine_brut:,.0f} €")
-style_cols[1].metric("Crédit en cours", f"{credits_encours:,.0f} €")
-style_cols[2].metric("Cash disponible", f"{cash_total:,.2f} €")
-style_cols[3].metric("Patrimoine Net", f"{patrimoine_net:,.0f} €", delta=f"{cash_total:,.0f} € cash")
+# La ligne de metrics (Design de ton dessin)
+# On utilise du CSS pour rapprocher les metrics du style violet de ton croquis
+st.markdown("""
+    <style>
+    [data-testid="stMetricValue"] { font-size: 30px; color: #7030A0; }
+    </style>
+    """, unsafe_allow_html=True)
+
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Patrimoine brut estimé", f"{patrimoine_brut:,.0f} €")
+m2.metric("Crédit en cours", f"{credits_encours:,.0f} €")
+m3.metric("Cash disponible", f"{cash_total:,.2f} €")
+m4.metric("Patrimoine Net", f"{patrimoine_net:,.0f} €")
 
 st.divider()
 
-# --- INTERFACE DE SAISIE POUR ALIMENTER LE TABLEAU ---
-menu = st.sidebar.radio("Navigation", ["Tableau de bord", "Éditer Valeur Biens", "Saisie Trésorerie"])
+# --- NAVIGATION ---
+menu = st.sidebar.radio("Menu", ["Tableau de bord", "Éditer mon Patrimoine", "Journal Trésorerie"])
 
-if menu == "Éditer Valeur Biens":
-    st.subheader("⚙️ Configuration des valeurs de ton patrimoine")
-    st.info("Remplis ces données pour que le Tableau de Bord se calcule.")
+if menu == "Éditer mon Patrimoine":
+    st.subheader("🏠 Gestion des Biens")
+    st.info("Ajoute tes biens ici (ex: Eguilles 014) avec leur valeur de revente estimée et le capital restant dû.")
     
-    # Éditeur interactif
-    new_cfg = st.data_editor(df_cfg, num_rows="dynamic", use_container_width=True)
-    if st.button("Sauvegarder les valeurs"):
-        new_cfg.to_csv(CONFIG_FILE, index=False)
-        st.success("Valeurs mises à jour !")
+    # Éditeur pour ajouter/modifier les biens
+    edited_cfg = st.data_editor(df_cfg, num_rows="dynamic", use_container_width=True)
+    if st.button("💾 Sauvegarder mon Patrimoine"):
+        edited_cfg.to_csv(CONFIG_FILE, index=False)
+        st.success("Patrimoine mis à jour !")
         st.rerun()
 
-elif menu == "Saisie Trésorerie":
-    st.subheader("💰 Mouvements de Cash")
-    with st.form("flux"):
-        t = st.selectbox("Type", ["Revenu", "Dépense"])
-        m = st.number_input("Montant (€)", min_value=0.0)
-        c = st.text_input("Commentaire (ex: Loyer Eguilles 014)")
-        if st.form_submit_button("Ajouter"):
-            new_op = pd.DataFrame([[pd.Timestamp.now(), t, "Banque", m, c]], 
-                                  columns=["Date", "Type", "Source_Flux", "Montant", "Commentaire"])
-            pd.concat([df_compta, new_op], ignore_index=True).to_csv(COMPTA_FILE, index=False)
-            st.rerun()
+elif menu == "Journal Trésorerie":
+    st.subheader("💰 Entrées / Sorties de Cash")
     
-    st.dataframe(df_compta.sort_values("Date", ascending=False))
+    with st.expander("➕ Ajouter une opération"):
+        with st.form("add_cash"):
+            t = st.selectbox("Type", ["Revenu", "Dépense"])
+            m = st.number_input("Montant (€)")
+            c = st.text_input("Commentaire")
+            if st.form_submit_button("Enregistrer"):
+                new_op = pd.DataFrame([[pd.Timestamp.now().strftime("%d/%m/%Y"), t, "Banque", m, c]], columns=cols_compta)
+                pd.concat([df_compta, new_op], ignore_index=True).to_csv(COMPTA_FILE, index=False)
+                st.rerun()
+    
+    # Tableau éditable pour supprimer/modifier les erreurs
+    st.write("### Historique complet")
+    edited_compta = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True)
+    if st.button("💾 Sauvegarder les modifications Compta"):
+        edited_compta.to_csv(COMPTA_FILE, index=False)
+        st.rerun()
