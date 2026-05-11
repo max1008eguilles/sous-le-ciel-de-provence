@@ -379,89 +379,100 @@ if check_password():
         st.title("📈 Récapitulatif Opérationnel - RO 2026")
         
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
-        ro_data = []
-
-        # Extraction des charges et crédits globaux de la compta pour 2026
+        
+        # Structure des lignes exactement comme sur ton screenshot
+        categories = [
+            "Nb nuits (Total)", "% occu (Total)", "P moyen (Total)",
+            "--- RNM IMMO ---",
+            "CA (RNM)", "CHARGES (RNM)", "FRAIS MENAGE (RNM)", "CREDIT (RNM)", "Objectif (RNM)", "% Objectif (RNM)", "NET AV IMP (RNM)",
+            "--- EGUILLES 014 ---",
+            "CA (014)", "FRAIS MENAGE (014)", "Objectif (014)", "% Objectif (014)",
+            "--- EGUILLES 119 ---",
+            "CA (119)", "CREDIT (119)", "FRAIS MENAGE (119)", "Objectif (119)", "% Objectif (119)"
+        ]
+        
+        # Initialisation du dictionnaire de données
+        final_matrix = {cat: [] for cat in categories}
+        
         df_compta_2026 = df_compta[pd.to_datetime(df_compta['Date']).dt.year == 2026].copy()
 
         for i, mois_nom in enumerate(mois_noms):
             m_num = i + 1
+            days_in_month = (date(2026, m_num % 12 + 1, 1) - date(2026, m_num, 1)).days if m_num < 12 else 31
             
-            # --- CALCUL STUDIO 014 ---
+            # --- COLLECTE DONNÉES 014 ---
             resa_014 = df_resa[(df_resa["Appartement"].isin(["014", "14", 14])) & 
                                (pd.to_datetime(df_resa["Date Arrivée"]).dt.month == m_num) & 
                                (pd.to_datetime(df_resa["Date Arrivée"]).dt.year == 2026)]
             ca_014 = resa_014["Montant"].sum()
             menages_014 = len(resa_014) * 20.0
-            obj_014 = df_obj_all[(df_obj_all["Année"] == 2026) & (df_obj_all["Mois"] == mois_nom) & (df_obj_all["Bien"] == "014")]["Objectif"].sum()
-            if obj_014 == 0: obj_014 = 1250.0 # Valeur par défaut si non défini
+            nuits_014 = len(resa_014) # Approximation basée sur le nombre de résas pour le cumul nuits
+            
+            # Sécurité colonne 'Bien' pour objectifs
+            if "Bien" in df_obj_all.columns:
+                obj_014 = df_obj_all[(df_obj_all["Année"] == 2026) & (df_obj_all["Mois"] == mois_nom) & (df_obj_all["Bien"] == "014")]["Objectif"].sum()
+            else:
+                obj_014 = 1250.0 # Valeur par défaut
 
-            # --- CALCUL STUDIO 119 ---
+            # --- COLLECTE DONNÉES 119 ---
             resa_119 = df_resa[(df_resa["Appartement"].isin(["119"])) & 
                                (pd.to_datetime(df_resa["Date Arrivée"]).dt.month == m_num) & 
                                (pd.to_datetime(df_resa["Date Arrivée"]).dt.year == 2026)]
             ca_119 = resa_119["Montant"].sum()
             menages_119 = len(resa_119) * 20.0
-            obj_119 = df_obj_all[(df_obj_all["Année"] == 2026) & (df_obj_all["Mois"] == mois_nom) & (df_obj_all["Bien"] == "119")]["Objectif"].sum()
-            if obj_119 == 0: obj_119 = 1250.0
+            nuits_119 = len(resa_119)
+            
+            if "Bien" in df_obj_all.columns:
+                obj_119 = df_obj_all[(df_obj_all["Année"] == 2026) & (df_obj_all["Mois"] == mois_nom) & (df_obj_all["Bien"] == "119")]["Objectif"].sum()
+            else:
+                obj_119 = 1250.0
 
-            # --- DONNÉES COMPTA (GLOBALES) ---
+            # --- COMPTA ET TOTAUX ---
             df_c_m = df_compta_2026[pd.to_datetime(df_compta_2026['Date']).dt.month == m_num]
-            charges_ext = df_c_m[df_c_m["Type"] == "Dépense"]["Montant"].sum()
-            credits_bancaires = df_c_m[df_c_m["Type"] == "Crédit"]["Montant"].sum()
-
-            # --- CUMUL GLOBAL (RNM IMMO) ---
+            ch_rnm = df_c_m[df_c_m["Type"] == "Dépense"]["Montant"].sum()
+            cr_rnm = df_c_m[df_c_m["Type"] == "Crédit"]["Montant"].sum()
+            
             total_ca = ca_014 + ca_119
             total_menages = menages_014 + menages_119
             total_obj = obj_014 + obj_119
-            net_av_imp = total_ca - total_menages - charges_ext - credits_bancaires
+            total_nuits = nuits_014 + nuits_119
+            
+            # Remplissage de la colonne mois
+            final_matrix["Nb nuits (Total)"].append(total_nuits)
+            final_matrix["% occu (Total)"].append(f"{(total_nuits/(days_in_month*2)*100):.1f}%")
+            final_matrix["P moyen (Total)"].append(f"{(total_ca/total_nuits if total_nuits > 0 else 0):.2f} €")
+            
+            final_matrix["--- RNM IMMO ---"].append("")
+            final_matrix["CA (RN)M"].append(total_ca)
+            final_matrix["CHARGES (RNM)"].append(ch_rnm)
+            final_matrix["FRAIS MENAGE (RNM)"].append(total_menages)
+            final_matrix["CREDIT (RNM)"].append(cr_rnm)
+            final_matrix["Objectif (RNM)"].append(total_obj)
+            final_matrix["% Objectif (RNM)"].append(f"{(total_ca/total_obj*100 if total_obj > 0 else 0):.1f}%")
+            final_matrix["NET AV IMP (RNM)"].append(total_ca - ch_rnm - total_menages - cr_rnm)
+            
+            final_matrix["--- EGUILLES 014 ---"].append("")
+            final_matrix["CA (014)"].append(ca_014)
+            final_matrix["FRAIS MENAGE (014)"].append(menages_014)
+            final_matrix["Objectif (014)"].append(obj_014)
+            final_matrix["% Objectif (014)"].append(f"{(ca_014/obj_014*100 if obj_014 > 0 else 0):.1f}%")
+            
+            final_matrix["--- EGUILLES 119 ---"].append("")
+            final_matrix["CA (119)"].append(ca_119)
+            final_matrix["CREDIT (119)"].append(cr_rnm) # Crédit rattaché
+            final_matrix["FRAIS MENAGE (119)"].append(menages_119)
+            final_matrix["Objectif (119)"].append(obj_119)
+            final_matrix["% Objectif (119)"].append(f"{(ca_119/obj_119*100 if obj_119 > 0 else 0):.1f}%")
 
-            ro_data.append({
-                "Mois": mois_nom,
-                "CA Global": total_ca,
-                "Charges": charges_ext,
-                "Ménages": total_menages,
-                "Crédits": credits_bancaires,
-                "Objectif Global": total_obj,
-                "Net av. Imp.": net_av_imp,
-                "CA 014": ca_014,
-                "CA 119": ca_119,
-                "Ménages 014": menages_014,
-                "Ménages 119": menages_119
-            })
-
-        df_ro = pd.DataFrame(ro_data)
-
-        # Affichage des métriques annuelles (Top bar)
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("CA Total 2026", f"{df_ro['CA Global'].sum():,.2f} €")
-        c2.metric("Objectif Annuel", f"{df_ro['Objectif Global'].sum():,.2f} €")
-        c3.metric("% Réalisation", f"{(df_ro['CA Global'].sum()/df_ro['Objectif Global'].sum()*100):.1f}%")
-        c4.metric("Net av. Impôts", f"{df_ro['Net av. Imp.'].sum():,.2f} €")
-
-        st.divider()
-
-        # Tableau complet façon Screenshot
-        st.subheader("📊 Tableau de Bord Annuel Détaillé")
+        # Création du DataFrame final avec les mois en colonnes
+        df_ro_final = pd.DataFrame(final_matrix, index=mois_noms).T
         
-        # Inversion pour avoir les mois en colonnes (optionnel, mais plus proche de ton Excel)
-        df_display = df_ro.set_index("Mois").T
+        # Affichage
+        st.subheader("📊 Tableau de Bord Annuel 2026")
+        st.dataframe(df_ro_final, use_container_width=True)
 
-        def style_net(v):
-            return "color: red;" if v < 0 else "color: green;"
-
-        # Utilisation de style.format pour éviter l'AttributeError
-        st.dataframe(df_ro.style.format({
-            "CA Global": "{:,.2f} €",
-            "Charges": "{:,.2f} €",
-            "Ménages": "{:,.2f} €",
-            "Crédits": "{:,.2f} €",
-            "Objectif Global": "{:,.2f} €",
-            "Net av. Imp.": "{:,.2f} €",
-            "CA 014": "{:,.2f} €",
-            "CA 119": "{:,.2f} €"
-        }).applymap(style_net, subset=["Net av. Imp."]), use_container_width=True)
-
-        # Graphique de performance
-        st.subheader("📈 Évolution du Revenu Net")
-        st.line_chart(df_ro.set_index("Mois")["Net av. Imp."])
+        # Graphique Net Mensuel
+        st.divider()
+        st.subheader("📈 Évolution Cash Flow (NET AV IMP)")
+        net_values = [v for v in final_matrix["NET AV IMP (RNM)"]]
+        st.area_chart(pd.Series(net_values, index=mois_noms))
