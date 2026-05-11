@@ -7,6 +7,7 @@ import plotly.express as px
 import requests  # Ajouté pour la liaison avec Make
 from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
+import pytz  # Pour gérer l'heure de Paris
 from streamlit_calendar import calendar
 
 # --- CONFIG DE LA PAGE ---
