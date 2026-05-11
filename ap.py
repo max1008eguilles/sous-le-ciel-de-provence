@@ -4,7 +4,8 @@ import pytz # À ajouter en haut de ton fichier avec les autres imports
 # On définit le fuseau horaire de Paris
 paris_tz = pytz.timezone('Europe/Paris')
 # On récupère l'heure de Paris, pas celle du serveur
-aujourdhui = datetime.now(paris_tz).strftime("%Y-%m-%d")import streamlit as st
+aujourdhui = datetime.now(paris_tz).strftime("%Y-%m-%d")
+import streamlit as st
 import pandas as pd
 import numpy as np
 import os
