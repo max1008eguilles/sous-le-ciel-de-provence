@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import os
 import plotly.express as px
+import requests  # Ajouté pour la liaison avec Make
 from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
 from streamlit_calendar import calendar
@@ -199,6 +200,7 @@ if check_password():
         for col in ["Date Arrivée", "Date Départ", "Appartement"]:
             if col not in df_resa.columns:
                 df_resa[col] = ""
+        
         edited_resa = st.data_editor(
             df_resa, 
             num_rows="dynamic", 
@@ -211,6 +213,7 @@ if check_password():
                 "Montant": st.column_config.NumberColumn("Montant", format="%.2f €"),
             }
         )
+        
         if st.button("💾 SAUVEGARDER DÉFINITIVEMENT"):
             df_to_save = edited_resa.copy()
             def fix_year(row):
@@ -225,6 +228,42 @@ if check_password():
             df_to_save.to_csv(RESA_FILE, index=False)
             st.success("✅ Données nettoyées et sauvegardées !")
             st.rerun()
+
+        # --- BLOC ENVOI GUIDE (MAKE) ---
+        st.divider()
+        st.subheader("📬 Envoi du Guide d'Arrivée")
+        
+        selected_index = st.selectbox(
+            "Sélectionnez la réservation pour l'envoi :",
+            edited_resa.index,
+            format_func=lambda x: f"{edited_resa.loc[x, 'Prénom_Nom']} - {edited_resa.loc[x, 'Appartement']} (le {edited_resa.loc[x, 'Date Arrivée']})"
+        )
+        
+        resa_sel = edited_resa.loc[selected_index]
+        appart_sel = str(resa_sel['Appartement'])
+
+        if "14" in appart_sel or "014" in appart_sel:
+            if st.button("🚀 Envoyer Guide 014"):
+                webhook_014 = "https://hook.eu2.make.com/7v3yap243qgcxbu8pc539owwgrvr32qt"
+                payload = {
+                    "Nom": str(resa_sel['Prénom_Nom']),
+                    "Date_arrivée": str(resa_sel['Date Arrivée']),
+                    "Date_départ": str(resa_sel['Date Départ']),
+                    "Code_studio": str(resa_sel.get('Code Studio', '')),
+                    "Code_résidence": str(resa_sel.get('Code Résidence', '')),
+                    "Mail": str(resa_sel.get('Mail', ''))
+                }
+                try:
+                    r = requests.post(webhook_014, json=payload)
+                    if r.status_code == 200:
+                        st.success(f"✅ Guide 014 envoyé pour {resa_sel['Prénom_Nom']}")
+                    else:
+                        st.error(f"❌ Erreur Make ({r.status_code})")
+                except Exception as e:
+                    st.error(f"❌ Erreur : {e}")
+        else:
+            st.info("Sélectionnez une réservation du studio 014 pour activer l'envoi.")
+
         st.divider()
         st.subheader("🗓️ Calendrier de contrôle")
         evts = []
@@ -243,56 +282,7 @@ if check_password():
                     })
             except: continue
         calendar(events=evts, options={"initialView": "dayGridMonth", "locale": "fr"})
-import requests
-import streamlit as st
 
-# --- DANS TA PAGE RÉSERVATIONS ---
-st.subheader("📋 Gestion des Guides d'Arrivée")
-
-# 1. Sélection du voyageur dans ton tableau global (df_resa)
-selected_index = st.selectbox(
-    "Sélectionnez une réservation :",
-    df_resa.index,
-    format_func=lambda x: f"{df_resa.loc[x, 'Nom']} - Appt: {df_resa.loc[x, 'Appartement']} (Arrivée: {df_resa.loc[x, 'Date arrivée']})"
-)
-
-# On récupère les données de la ligne choisie
-resa_selectionnee = df_resa.loc[selected_index]
-appart = str(resa_selectionnee['Appartement'])
-
-# 2. Logique du bouton conditionnel
-# On vérifie si c'est bien le 014 (ou 14)
-is_014 = "14" in appart or "014" in appart
-
-if is_014:
-    if st.button("🚀 Envoyer Guide 014"):
-        # URL spécifique que tu m'as donnée pour le 014
-        WEBHOOK_014 = "https://hook.eu2.make.com/7v3yap243qgcxbu8pc539owwgrvr32qt"
-        
-        # Préparation des données EXACTES pour ton Google Doc
-        payload = {
-            "Nom": str(resa_selectionnee['Nom']),
-            "Date_arrivée": str(resa_selectionnee['Date arrivée']),
-            "Date_départ": str(resa_selectionnee['Date départ']),
-            "Code_studio": str(resa_selectionnee['Code studio']),
-            "Code_résidence": str(resa_selectionnee['Code résidence']),
-            "Mail": str(resa_selectionnee['Mail'])
-        }
-        
-        try:
-            with st.spinner("Génération du guide 014 en cours..."):
-                r = requests.post(WEBHOOK_014, json=payload)
-            
-            if r.status_code == 200:
-                st.success(f"✅ Guide 014 généré avec succès pour {resa_selectionnee['Nom']} !")
-            else:
-                st.error(f"❌ Erreur Make ({r.status_code})")
-        except Exception as e:
-            st.error(f"❌ Connexion impossible : {e}")
-else:
-    # Si l'appart est le 119 ou autre, on grise ou on affiche un message
-    st.warning(f"⚠️ Cette réservation concerne l'appartement {appart}. Le bouton Guide 014 est désactivé.")
-    st.button("🚀 Envoyer Guide 014", disabled=True)
     # --- PAGE DÉTAIL 014 ---
     elif page == "Détail 014":
         st.title("🏠 Détail Studio 014")
@@ -416,38 +406,30 @@ else:
             real_an = sum(float(r["Montant"]) for _, r in resa_119.iterrows() if pd.notnull(r["Date Arrivée"]) and r["Date Arrivée"].year == sel_year)
             st.metric(f"Réalisé {sel_year}", f"{real_an:,.0f} €")
             st.write(f"Cible : {obj_an:,.0f} €")
-            st.metric("Restant", f"{max(0, obj_an - real_an):,.0f} €") # Ajout du restant annuel
+            st.metric("Restant", f"{max(0, obj_an - real_an):,.0f} €")
             st.progress(min(1.0, real_an / obj_an))
             
         with col_d:
             rows = [{"Date": d.strftime("%d/%m"), "Montant": f"{v['montant']:.2f} €" if v['montant'] > 0 else "-", "Client": v["client"], "Action": "🟢 Ménage" if v["menage"] else ""} for d,v in month_data.items()]
             st.table(pd.DataFrame(rows).style.apply(lambda x: ['background-color: #2E8B57; color: white' if 'Ménage' in str(x.Action) else '' for i in x], axis=1))
 
-# --- PAGE RO 2026 ---
+    # --- PAGE RO 2026 ---
     elif page == "RO 2026":
         st.title("📈 Récapitulatif Opérationnel - RO 2026")
         
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
         
-        # 1. RÉCUPÉRATION DES OBJECTIFS (CIBLES) DEPUIS LES SOURCES DE DÉTAIL
-        # On reproduit la logique que tu as dans tes pages détail (vue sur ta capture 23:50:23)
         try:
-            # Charger les fichiers d'objectifs sauvegardés par le bouton "Sauvegarder Objectifs"
             df_obj_014 = pd.read_csv("objectifs_014_v2.csv")
             df_obj_119 = pd.read_csv("objectifs_119_v2.csv")
-            
-            # Calcul de l'objectif annuel par appart pour 2026
             obj_an_014 = df_obj_014[df_obj_014["Année"] == 2026]["Objectif"].sum()
             obj_an_119 = df_obj_119[df_obj_119["Année"] == 2026]["Objectif"].sum()
         except:
-            # Fallback si les fichiers n'existent pas encore
             obj_an_014 = 0.0
             obj_an_119 = 0.0
 
-        # L'OBJECTIF GLOBAL EST LA SOMME DES DEUX
         objectif_annuel_rnm = obj_an_014 + obj_an_119
 
-        # 2. INITIALISATION DE LA MATRICE MENSUELLE
         categories = [
             "Nb nuits (Total)", "% occu (Total)", "P moyen (Total)",
             "--- RNM IMMO ---",
@@ -462,42 +444,33 @@ else:
         for sep in ["--- RNM IMMO ---", "--- EGUILLES 014 ---", "--- EGUILLES 119 ---"]:
             final_matrix[sep] = [""] * 12
 
-        # Préparation des données réelles
         df_resa['Date Arrivée'] = pd.to_datetime(df_resa['Date Arrivée'], errors='coerce')
         df_compta['Date'] = pd.to_datetime(df_compta['Date'], errors='coerce')
 
         for i, mois_nom in enumerate(mois_noms):
             m_num = i + 1
-            # Filtrage 2026
             res_m = df_resa[(df_resa['Date Arrivée'].dt.month == m_num) & (df_resa['Date Arrivée'].dt.year == 2026)]
             res_014 = res_m[res_m["Appartement"].astype(str).str.contains("14|014")]
             res_119 = res_m[res_m["Appartement"].astype(str) == "119"]
             
-            # Objectifs mensuels
             o_m_014 = df_obj_014[(df_obj_014["Année"] == 2026) & (df_obj_014["Mois"] == mois_nom)]["Objectif"].sum() if 'df_obj_014' in locals() else 0
             o_m_119 = df_obj_119[(df_obj_119["Année"] == 2026) & (df_obj_119["Mois"] == mois_nom)]["Objectif"].sum() if 'df_obj_119' in locals() else 0
 
-            # Remplissage de la matrice (extraits)
             final_matrix["CA (RNM)"][i] = res_014["Montant"].sum() + res_119["Montant"].sum()
             final_matrix["Objectif (RNM)"][i] = o_m_014 + o_m_119
             final_matrix["Objectif (014)"][i] = o_m_014
             final_matrix["Objectif (119)"][i] = o_m_119
-            # ... (ajouter ici les calculs de charges/crédits par mois si nécessaire)
 
-        # Affichage du tableau
         st.table(pd.DataFrame(final_matrix, index=mois_noms).T)
 
-        # 3. SYNTHÈSE ANNUELLE (BAS DE PAGE)
         st.divider()
         st.subheader("🎯 Synthèse Annuelle RNM IMMO")
         
         ca_total_an = sum(final_matrix["CA (RNM)"])
-        
         c1, c2, c3, c4 = st.columns(4)
         c5, c6, c7, _ = st.columns(4)
         
         c1.metric("CA TOTAL", f"{ca_total_an:,.2f} €")
-        # Utilisation de l'objectif calculé en haut du script
         c5.metric("OBJECTIF", f"{objectif_annuel_rnm:,.2f} €")
         
         perc_realisation = (ca_total_an / objectif_annuel_rnm * 100) if objectif_annuel_rnm > 0 else 0
