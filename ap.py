@@ -6,10 +6,10 @@ from datetime import datetime
 try:
     from streamlit_calendar import calendar
 except:
-    st.error("Installation des modules... Patiente 30 secondes.")
+    st.error("Modules en cours de chargement...")
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="RNM IMMO - Full Management", layout="wide")
+st.set_page_config(page_title="RNM IMMO - Direct Edit", layout="wide")
 DATA_FILE = "data_rnm_immo.csv"
 COMPTA_FILE = "compta_rnm_immo.csv"
 CONFIG_FILE = "config_biens.csv"
@@ -20,119 +20,109 @@ def load_data(file, columns):
         except: pass
     return pd.DataFrame(columns=columns)
 
-cols_resa = ["ID", "Date", "Bien", "Locataire", "Source", "Paiement", "Arrivée", "Départ", "Prix Total", "Mail", "Tel"]
-cols_compta = ["ID", "Date", "Type", "Source_Flux", "Montant", "Catégorie", "Commentaire"]
+cols_resa = ["Bien", "Locataire", "Source", "Paiement", "Arrivée", "Départ", "Prix Total", "Tel"]
+cols_compta = ["Date", "Type", "Source_Flux", "Montant", "Catégorie", "Commentaire"]
 cols_config = ["Bien", "Prix Achat", "Apport", "Travaux", "Credit Mensuel"]
 
 df_resa = load_data(DATA_FILE, cols_resa)
 df_compta = load_data(COMPTA_FILE, cols_compta)
 df_cfg = load_data(CONFIG_FILE, cols_config)
 
-st.title("🏛️ RNM IMMO - Pilotage Complet")
+st.title("🏛️ RNM IMMO - Gestion Interactive")
 
 # --- NAVIGATION ---
-menu = st.sidebar.radio("Menu", ["Planning & Résas", "Trésorerie & Compta", "Saisie Réservation", "Rentabilité Projet", "Configuration", "Admin / Modification"])
+menu = st.sidebar.radio("Menu", ["Planning & Résas", "Trésorerie & Compta", "Saisie Rapide", "Rentabilité & Config"])
 
-# --- 1. PLANNING & RÉSERVATIONS ---
+# --- 1. PLANNING & RÉSERVATIONS (MODIFIABLE) ---
 if menu == "Planning & Résas":
-    st.subheader("📅 Planning Global")
+    st.subheader("📅 Planning")
     events = []
     for i, row in df_resa.iterrows():
         color = "#1E90FF" if "014" in str(row['Bien']) else "#FF4B4B"
         events.append({"title": f"{row['Bien']} - {row['Locataire']}", "start": str(row['Arrivée']), "end": str(row['Départ']), "color": color})
-    
-    if "calendar" in globals():
-        calendar(events=events, options={"locale": "fr"})
+    calendar(events=events, options={"locale": "fr"})
     
     st.divider()
-    st.subheader("📋 Historique des Réservations")
-    if not df_resa.empty:
-        st.dataframe(df_resa.sort_values("Arrivée", ascending=False), use_container_width=True)
-    else:
-        st.info("Aucune réservation enregistrée.")
+    st.subheader("📝 Liste des Réservations (Modifiable)")
+    st.info("💡 Double-clique sur une case pour modifier. Coche 'Supprimer' à gauche pour effacer.")
+    
+    # Ajout d'une colonne de suppression temporaire
+    df_edit_resa = df_resa.copy()
+    df_edit_resa.insert(0, "Supprimer", False)
+    
+    edited_resa = st.data_editor(df_edit_resa, use_container_width=True, num_rows="dynamic", key="editor_resa")
+    
+    if st.button("Enregistrer les modifications (Résas)"):
+        # On garde uniquement les lignes non cochées pour suppression
+        final_df = edited_resa[edited_resa["Supprimer"] == False].drop(columns=["Supprimer"])
+        final_df.to_csv(DATA_FILE, index=False)
+        st.success("Modifications enregistrées !")
+        st.rerun()
 
-# --- 2. TRÉSORERIE & COMPTA ---
+# --- 2. TRÉSORERIE & COMPTA (MODIFIABLE) ---
 elif menu == "Trésorerie & Compta":
-    st.subheader("💳 État des Comptes")
-    def calc_solde(flux):
-        entrees = pd.to_numeric(df_compta[(df_compta["Source_Flux"] == flux) & (df_compta["Type"] == "Revenu")]["Montant"]).sum()
-        sorties = pd.to_numeric(df_compta[(df_compta["Source_Flux"] == flux) & (df_compta["Type"] == "Dépense")]["Montant"]).sum()
-        return entrees - sorties
+    st.subheader("💳 État des Flux")
+    
+    # Calcul des soldes en direct
+    df_compta["Montant"] = pd.to_numeric(df_compta["Montant"], errors='coerce').fillna(0)
+    banque = df_compta[(df_compta["Source_Flux"] == "Compte Société") & (df_compta["Type"] == "Revenu")]["Montant"].sum() - \
+             df_compta[(df_compta["Source_Flux"] == "Compte Société") & (df_compta["Type"] == "Dépense")]["Montant"].sum()
+    cash = df_compta[(df_compta["Source_Flux"] == "Cash") & (df_compta["Type"] == "Revenu")]["Montant"].sum() - \
+           df_compta[(df_compta["Source_Flux"] == "Cash") & (df_compta["Type"] == "Dépense")]["Montant"].sum()
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Compte Société", f"{calc_solde('Compte Société'):,.2f} €")
-    c2.metric("Cash", f"{calc_solde('Cash'):,.2f} €")
-    c3.metric("Total", f"{(calc_solde('Compte Société') + calc_solde('Cash')):,.2f} €")
+    c1, c2 = st.columns(2)
+    c1.metric("Compte Société", f"{banque:,.2f} €")
+    c2.metric("Cash", f"{cash:,.2f} €")
 
     st.divider()
-    with st.expander("➕ Ajouter une opération Manuelle"):
-        with st.form("compta_man"):
-            t_op = st.selectbox("Type", ["Dépense", "Revenu"])
-            src = st.selectbox("Flux", ["Compte Société", "Cash"])
-            mnt = st.number_input("Montant", min_value=0.0)
-            cat = st.selectbox("Catégorie", ["Charges", "Travaux", "Assurance", "Loyer", "Autre"])
-            txt = st.text_input("Commentaire")
-            if st.form_submit_button("Enregistrer"):
-                new_id = datetime.now().strftime("%Y%m%d%H%M%S")
-                new_op = pd.DataFrame([[new_id, datetime.now().strftime("%Y-%m-%d"), t_op, src, mnt, cat, txt]], columns=cols_compta)
-                pd.concat([df_compta, new_op], ignore_index=True).to_csv(COMPTA_FILE, index=False)
-                st.rerun()
-
-    st.dataframe(df_compta.sort_values("Date", ascending=False), use_container_width=True)
-
-# --- 3. SAISIE RÉSERVATION ---
-elif menu == "Saisie Réservation":
-    with st.form("resa_new"):
-        st.subheader("Nouvelle entrée")
-        b = st.selectbox("Bien", ["EGUILLES 014", "EGUILLES 119"])
-        l = st.text_input("Nom Locataire")
-        p = st.number_input("Prix Total", min_value=0.0)
-        m = st.selectbox("Paiement", ["Virement", "Cash"])
-        s = st.date_input("Arrivée")
-        e = st.date_input("Sortie")
-        if st.form_submit_button("Valider"):
-            rid = datetime.now().strftime("R%Y%m%d%H%M%S")
-            # Enregistre Résa
-            nr = pd.DataFrame([[rid, datetime.now().date(), b, l, "Direct", m, str(s), str(e), p, "", ""]], columns=cols_resa)
-            pd.concat([df_resa, nr], ignore_index=True).to_csv(DATA_FILE, index=False)
-            # Enregistre Compta auto
-            dest = "Compte Société" if m == "Virement" else "Cash"
-            nc = pd.DataFrame([[rid, str(s), "Revenu", dest, p, "Loyer", f"Résa {l} - {b}"]], columns=cols_compta)
-            pd.concat([df_compta, nc], ignore_index=True).to_csv(COMPTA_FILE, index=False)
-            st.success("C'est en ligne !")
-            st.rerun()
-
-# --- 6. ADMIN / MODIFICATION (NOUVEAU) ---
-elif menu == "Admin / Modification":
-    st.subheader("🛠️ Modifier ou Supprimer des données")
+    st.subheader("📝 Journal de Caisse (Modifiable)")
     
-    tab1, tab2 = st.tabs(["Réservations", "Trésorerie"])
+    df_edit_compta = df_compta.copy()
+    df_edit_compta.insert(0, "Supprimer", False)
     
-    with tab1:
-        if not df_resa.empty:
-            id_del = st.selectbox("Choisir une résa à supprimer (par ID)", df_resa["ID"].tolist())
-            if st.button("Supprimer cette réservation"):
-                # Supprime de la résa ET de la compta (car ils partagent le même ID)
-                df_resa = df_resa[df_resa["ID"] != id_del]
-                df_compta = df_compta[df_compta["ID"] != id_del]
-                df_resa.to_csv(DATA_FILE, index=False)
-                df_compta.to_csv(COMPTA_FILE, index=False)
-                st.success("Réservation et flux associé supprimés !")
-                st.rerun()
-        else: st.write("Rien à supprimer.")
+    edited_compta = st.data_editor(df_edit_compta, use_container_width=True, num_rows="dynamic", key="editor_compta")
+    
+    if st.button("Mettre à jour la Comptabilité"):
+        final_df_c = edited_compta[edited_compta["Supprimer"] == False].drop(columns=["Supprimer"])
+        final_df_c.to_csv(COMPTA_FILE, index=False)
+        st.success("Comptabilité mise à jour !")
+        st.rerun()
 
-    with tab2:
-        if not df_compta.empty:
-            id_c = st.selectbox("Choisir une transaction à supprimer", df_compta["ID"].tolist())
-            st.write(df_compta[df_compta["ID"] == id_c])
-            if st.button("Supprimer cette transaction"):
-                df_compta = df_compta[df_compta["ID"] != id_c]
-                df_compta.to_csv(COMPTA_FILE, index=False)
-                st.success("Transaction supprimée !")
+# --- 3. SAISIE RAPIDE ---
+elif menu == "Saisie Rapide":
+    with st.form("saisie_f"):
+        st.subheader("Entrer une nouvelle donnée")
+        cat_type = st.radio("Nature", ["Réservation", "Dépense/Autre Revenu"], horizontal=True)
+        
+        if cat_type == "Réservation":
+            b = st.selectbox("Bien", ["EGUILLES 014", "EGUILLES 119"])
+            l = st.text_input("Locataire")
+            p = st.number_input("Prix Total (€)")
+            m = st.selectbox("Paiement", ["Virement", "Cash"])
+            arr = st.date_input("Arrivée")
+            dep = st.date_input("Départ")
+            if st.form_submit_button("Enregistrer Résa"):
+                # Sauvegarde Résa
+                new_r = pd.DataFrame([[b, l, "Direct", m, str(arr), str(dep), p, ""]], columns=cols_resa)
+                pd.concat([df_resa, new_r], ignore_index=True).to_csv(DATA_FILE, index=False)
+                # Sauvegarde Compta auto
+                dest = "Compte Société" if m == "Virement" else "Cash"
+                new_c = pd.DataFrame([[str(arr), "Revenu", dest, p, "Loyer", f"Résa {l}"]], columns=cols_compta)
+                pd.concat([df_compta, new_c], ignore_index=True).to_csv(COMPTA_FILE, index=False)
+                st.rerun()
+        else:
+            col1, col2 = st.columns(2)
+            t = col1.selectbox("Type", ["Dépense", "Revenu"])
+            s = col2.selectbox("Flux", ["Compte Société", "Cash"])
+            m = st.number_input("Montant")
+            com = st.text_input("Commentaire")
+            if st.form_submit_button("Enregistrer Flux"):
+                new_c = pd.DataFrame([[datetime.now().strftime("%Y-%m-%d"), t, s, m, "Divers", com]], columns=cols_compta)
+                pd.concat([df_compta, new_c], ignore_index=True).to_csv(COMPTA_FILE, index=False)
                 st.rerun()
 
-# --- Garder les autres menus simplified pour la lecture ---
-elif menu == "Rentabilité Projet":
-    st.info("Visualisation de la rentabilité projet")
-elif menu == "Configuration":
-    st.info("Configuration des biens")
+# --- 4. RENTABILITÉ & CONFIG ---
+elif menu == "Rentabilité & Config":
+    # (Garder le code de config et de renta projet ici)
+    st.write("Gestion de la configuration des biens")
+    
