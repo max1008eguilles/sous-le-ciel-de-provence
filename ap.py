@@ -10,28 +10,30 @@ st.set_page_config(page_title="RNM IMMO - Expert", layout="wide")
 CONFIG_FILE = "config_biens_v3.csv"
 
 def load_data():
-    cols = ["Bien", "Prix Achat", "Travaux", "Frais Notaire", "Apport", 
+    # Remplacement de 'Apport' par 'Montant Crédit'
+    cols = ["Bien", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", 
             "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"]
     if os.path.exists(CONFIG_FILE):
         df = pd.read_csv(CONFIG_FILE)
-        # Conversion en datetime pour le calcul, puis en date pour l'affichage
+        # Gestion de la transition Apport -> Montant Crédit si besoin
+        if "Apport" in df.columns and "Montant Crédit" not in df.columns:
+            df.rename(columns={"Apport": "Montant Crédit"}, inplace=True)
         df["Date Début"] = pd.to_datetime(df["Date Début"]).dt.date
         return df
     return pd.DataFrame(columns=cols)
 
 df_cfg = load_data()
 
-# --- FONCTION CALCUL CAPITAL RESTANT ---
+# --- FONCTION CALCUL CAPITAL RESTANT (Basé sur Montant Initial) ---
 def calculer_capital_restant(row):
     try:
-        # P = Capital emprunté
-        P = float(row["Prix Achat"]) + float(row["Frais Notaire"]) + float(row["Travaux"]) - float(row["Apport"])
+        # P = Montant initial du crédit saisi par l'utilisateur
+        P = float(row["Montant Crédit"])
         if P <= 0: return 0
         
         r = (float(row["Taux (%)"]) / 100) / 12
         n = int(row["Durée (mois)"])
         
-        # Calcul du nombre de mois passés depuis le début
         date_debut = row["Date Début"]
         if not isinstance(date_debut, (date, datetime)):
             return P
@@ -43,7 +45,7 @@ def calculer_capital_restant(row):
         if m_payees <= 0: return P
         if m_payees >= n: return 0
         
-        # Formule CRD
+        # Formule CRD basée sur le montant emprunté P
         crd = P * ((1 + r)**n - (1 + r)**m_payees) / ((1 + r)**n - 1)
         return max(0, crd)
     except:
@@ -51,8 +53,7 @@ def calculer_capital_restant(row):
 
 # --- CALCULS GENERAUX ---
 if not df_cfg.empty:
-    # On s'assure que tout est numérique pour les calculs
-    for c in ["Prix Achat", "Travaux", "Frais Notaire", "Apport"]:
+    for c in ["Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
         df_cfg[c] = pd.to_numeric(df_cfg[c], errors='coerce').fillna(0)
         
     df_cfg["Valeur Brute"] = df_cfg["Prix Achat"] + df_cfg["Travaux"] + df_cfg["Frais Notaire"]
@@ -65,7 +66,7 @@ if not df_cfg.empty:
 else:
     total_brut = total_crd = total_net = 0
 
-# --- INTERFACE ---
+# --- INTERFACE (Fidèle à tes captures) ---
 st.title("🏛️ RNM IMMO - Tableau de Bord Financier")
 st.subheader(f"= {len(df_cfg)} Biens immo")
 
@@ -78,18 +79,18 @@ st.divider()
 
 st.subheader("⚙️ Configuration Précise des Biens")
 
-# Utilisation de st.data_editor avec configuration de colonne Date
 edited_df = st.data_editor(
-    df_cfg[["Bien", "Prix Achat", "Travaux", "Frais Notaire", "Apport", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"]],
+    df_cfg[["Bien", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"]],
     num_rows="dynamic",
     use_container_width=True,
     column_config={
         "Date Début": st.column_config.DateColumn(
             "Date Début",
-            help="Date de la première mensualité",
-            format="DD/MM/YYYY",
-            min_value=date(2000, 1, 1),
-            max_value=date(2050, 12, 31),
+            format="DD/MM/YYYY"
+        ),
+        "Montant Crédit": st.column_config.NumberColumn(
+            "Montant Crédit",
+            help="Saisis ici le montant initial que tu as emprunté"
         )
     }
 )
