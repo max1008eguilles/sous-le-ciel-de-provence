@@ -33,11 +33,7 @@ def check_password():
         st.text_input("Identifiant (Robin, Nathan ou Maxence)", key="username")
         st.text_input("Mot de passe", type="password", key="password")
         st.button("Se connecter", on_click=password_entered)
-        # Ajout d'une sécurité : si Secrets n'est pas configuré
-        if "passwords" not in st.secrets:
-            st.warning("⚠️ Attention : La section [passwords] est absente des Secrets Streamlit.")
-        else:
-            st.error("🚫 Identifiant ou mot de passe incorrect.")
+        st.error("🚫 Identifiant ou mot de passe incorrect.")
         return False
     else:
         return True
@@ -69,7 +65,6 @@ if check_password():
     df_compta = load_compta()
     df_cfg = load_config()
 
-    # --- CALCULS TRESORERIE ---
     def get_solde(compte_nom):
         if df_compta.empty: return 0.0
         df_c = df_compta[df_compta["Compte"] == compte_nom]
@@ -82,7 +77,6 @@ if check_password():
     solde_cash_physique = get_solde("Cash")
     total_treso_dynamique = solde_cic + solde_cash_physique
 
-    # --- BARRE LATÉRALE ---
     with st.sidebar:
         st.title("📂 Navigation")
         current_user = st.session_state.get('user_authenticated', 'Utilisateur')
@@ -94,12 +88,11 @@ if check_password():
             st.session_state["password_correct"] = False
             st.rerun()
 
-    # --- PAGE RNM IMMO ---
     if page == "RNM IMMO":
+        # ... (Logique page principale inchangée)
         if not df_cfg.empty:
             for c in ["Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
                 df_cfg[c] = pd.to_numeric(df_cfg[c], errors='coerce').fillna(0)
-            
             def calc_crd(row):
                 try:
                     P, r, n = float(row["Montant Crédit"]), (float(row["Taux (%)"])/100)/12, int(row["Durée (mois)"])
@@ -109,14 +102,12 @@ if check_password():
                     if m >= n: return 0
                     return P * ((1 + r)**n - (1 + r)**m) / ((1 + r)**n - 1)
                 except: return 0
-
             total_brut = df_cfg["Valeur Actuelle"].sum()
             df_cfg["Capital Restant"] = df_cfg.apply(calc_crd, axis=1)
             total_crd = df_cfg["Capital Restant"].sum()
             total_net = (total_brut + total_treso_dynamique) - total_crd
             df_cfg["Patrimoine Net Bien"] = df_cfg["Valeur Actuelle"] - df_cfg["Capital Restant"]
-        else:
-            total_brut = total_crd = total_net = 0
+        else: total_brut = total_crd = total_net = 0
 
         st.title("🏛️ RNM IMMO - Tableau de Bord")
         m1, m2, m3, m4 = st.columns(4)
@@ -124,77 +115,83 @@ if check_password():
         m2.metric("Dette Bancaire", f"{total_crd:,.0f} €")
         m3.metric("Cash disponible", f"{total_treso_dynamique:,.2f} €")
         m4.metric("Patrimoine Net", f"{total_net:,.0f} €")
-
         st.divider()
         st.subheader("⚙️ Configuration des Biens")
         edited_df = st.data_editor(df_cfg, num_rows="dynamic", use_container_width=True)
         if st.button("💾 Sauvegarder Biens"):
             edited_df.to_csv(CONFIG_FILE, index=False)
             st.rerun()
-
         if not df_cfg.empty:
             st.divider()
             st.subheader("📊 Détail par Bien")
-            df_plot = df_cfg.copy()
-            fig = px.bar(df_plot, x="Bien", y=["Patrimoine Net Bien", "Capital Restant"], barmode="stack", color_discrete_map={"Patrimoine Net Bien": "#7030A0", "Capital Restant": "#E1E1E1"})
+            fig = px.bar(df_cfg, x="Bien", y=["Patrimoine Net Bien", "Capital Restant"], barmode="stack", color_discrete_map={"Patrimoine Net Bien": "#7030A0", "Capital Restant": "#E1E1E1"})
             st.plotly_chart(fig, use_container_width=True)
 
-    # --- PAGE COMPTA ---
     elif page == "COMPTA":
         st.title("💰 Comptabilité - RNM IMMO")
-        
-        # 1. EN-TÊTE : SOLDES ACTUELS
         c1, c2, c3 = st.columns(3)
         c1.metric("Montant CIC", f"{solde_cic:,.2f} €")
         c2.metric("Montant Cash", f"{solde_cash_physique:,.2f} €")
         c3.metric("TOTAL TRESORERIE", f"{total_treso_dynamique:,.2f} €")
         
-        # 2. ANALYSE FINANCIÈRE (Désormais au-dessus)
+        # --- ANALYSE FINANCIÈRE FUSIONNÉE ---
         if not df_compta.empty:
             st.divider()
-            col_m, col_y = st.columns(2)
+            st.subheader("📊 Analyse Financière (Période)")
             
-            with col_m:
-                st.subheader("🗓️ Récapitulatif Mensuel")
-                df_m = df_compta.copy()
-                df_m['Mois'] = df_m['Date'].dt.strftime('%Y-%m')
-                recap_m = df_m.groupby(['Mois', 'Type'])['Montant'].sum().unstack(fill_value=0)
-                for col in ["Revenu", "Dépense", "Crédit"]:
-                    if col not in recap_m.columns: recap_m[col] = 0.0
-                recap_m = recap_m.rename(columns={"Revenu": "Revenus", "Dépense": "Charges", "Crédit": "Crédit"})
-                recap_m["Cash Flow"] = recap_m["Revenus"] - recap_m["Charges"] - recap_m["Crédit"]
-                st.table(recap_m.sort_index(ascending=False).style.format("{:,.2f} €"))
+            df_calc = df_compta.copy()
+            df_calc['Année'] = df_calc['Date'].dt.strftime('%Y')
+            df_calc['Mois'] = df_calc['Date'].dt.strftime('%m/%Y')
+            
+            # 1. Calcul Annuel
+            recap_y = df_calc.groupby(['Année', 'Type'])['Montant'].sum().unstack(fill_value=0)
+            # 2. Calcul Mensuel
+            recap_m = df_calc.groupby(['Mois', 'Type', 'Année'])['Montant'].sum().unstack(level=1, fill_value=0)
+            
+            # Fusionner les index et colonnes manquantes
+            for col in ["Revenu", "Dépense", "Crédit"]:
+                if col not in recap_y.columns: recap_y[col] = 0.0
+                if col not in recap_m.columns: recap_m[col] = 0.0
 
-            with col_y:
-                st.subheader("📅 Récapitulatif Annuel")
-                df_y = df_compta.copy()
-                df_y['Année'] = df_y['Date'].dt.strftime('%Y')
-                recap_y = df_y.groupby(['Année', 'Type'])['Montant'].sum().unstack(fill_value=0)
-                for col in ["Revenu", "Dépense", "Crédit"]:
-                    if col not in recap_y.columns: recap_y[col] = 0.0
-                recap_y = recap_y.rename(columns={"Revenu": "Total Revenus", "Dépense": "Total Charges", "Crédit": "Total Crédit"})
-                recap_y["Cash Flow Annuel"] = recap_y["Total Revenus"] - recap_y["Total Charges"] - recap_y["Total Crédit"]
-                st.table(recap_y.sort_index(ascending=False).style.format("{:,.2f} €"))
-        
-        # 3. SAISIE ET JOURNAL (Désormais en dessous)
+            # Préparation tableau final
+            final_rows = []
+            annees = sorted(df_calc['Année'].unique(), reverse=True)
+            
+            for a in annees:
+                # Ligne Annuelle (Gras)
+                val_y = recap_y.loc[a]
+                cf_y = val_y["Revenu"] - val_y["Dépense"] - val_y["Crédit"]
+                final_rows.append({"Période": f"TOTAL {a}", "Revenus": val_y["Revenu"], "Charges": val_y["Dépense"], "Crédit": val_y["Crédit"], "Cash Flow": cf_y})
+                
+                # Lignes Mensuelles de cette année
+                mes_mois = recap_m.xs(a, level='Année').sort_index(ascending=False)
+                for m, val_m in mes_mois.iterrows():
+                    cf_m = val_m["Revenu"] - val_m["Dépense"] - val_m["Crédit"]
+                    final_rows.append({"Période": m, "Revenus": val_m["Revenu"], "Charges": val_m["Dépense"], "Crédit": val_m["Crédit"], "Cash Flow": cf_m})
+
+            df_final = pd.DataFrame(final_rows)
+            st.table(df_final.style.format({
+                "Revenus": "{:,.2f} €", "Charges": "{:,.2f} €", "Crédit": "{:,.2f} €", "Cash Flow": "{:,.2f} €"
+            }))
+
+        # --- SAISIE ET JOURNAL ---
         st.divider()
         col_add, col_list = st.columns([1, 2])
         with col_add:
-            st.subheader("➕ Ajouter une ligne")
+            st.subheader("➕ Ajouter")
             with st.form("f_compta"):
                 d = st.date_input("Date", date.today())
                 t = st.selectbox("Type", ["Revenu", "Dépense", "Crédit"])
                 cpt = st.selectbox("Compte", ["CIC", "Cash"])
                 m = st.number_input("Montant", min_value=0.0)
                 txt = st.text_input("Commentaire")
-                if st.form_submit_button("Valider l'entrée"):
+                if st.form_submit_button("Valider"):
                     new = pd.DataFrame([[pd.to_datetime(d), t, cpt, m, txt, False]], columns=df_compta.columns)
                     pd.concat([df_compta, new], ignore_index=True).to_csv(COMPTA_FILE, index=False)
                     st.rerun()
-        
         with col_list:
-            st.subheader("📝 Journal des Transactions")
+            st.subheader("📝 Journal")
             ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True)
-            if st.button("💾 Sauvegarder les modifications du journal"):
+            if st.button("💾 Sauvegarder"):
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
