@@ -219,7 +219,7 @@ if check_password():
             # On filtre le tableau avec CETTE date précise
             df_jour = df_resa[df_resa["Date Arrivée"] == date_paris].copy()
 
-            if df_jour.empty:
+           if df_jour.empty:
                 st.info(f"Aucune arrivée prévue aujourd'hui ({date_paris}).")
             else:
                 st.write(f"Vérification des arrivées pour : **{date_paris}**")
@@ -228,14 +228,14 @@ if check_password():
                     df_jour['Prénom_Nom'].unique()
                 )
                 
-               if st.button("📤 Envoyer le guide au client sélectionné"):
+                # Le bouton doit être aligné avec le st.write juste au-dessus
+                if st.button("📤 Envoyer le guide au client sélectionné"):
                     resa_sel = df_jour[df_jour['Prénom_Nom'] == client_a_envoyer].iloc[0]
                     appart = str(resa_sel.get('Appartement', ''))
 
-                    # --- SÉCURITÉ : On ne déclenche que si c'est le 014 ---
+                    # SÉCURITÉ : Uniquement si c'est le 014
                     if "14" in appart or "014" in appart:
                         webhook_url = "https://hook.eu2.make.com/7v3yap243qgcxbu8pc539owwgrvr32qt"
-                        
                         payload = {
                             "Nom": str(resa_sel['Prénom_Nom']),
                             "Date_arrivée": str(resa_sel['Date Arrivée']),
@@ -245,23 +245,19 @@ if check_password():
                             "Code_autre": str(resa_sel.get('Code Autre', '')),
                             "Mail": str(resa_sel.get('Mail', ''))
                         }
-                        
                         try:
                             r = requests.post(webhook_url, json=payload)
                             if r.status_code == 200:
-                                st.success(f"✅ Guide 014 envoyé avec succès à {resa_sel['Prénom_Nom']} !")
+                                st.success(f"✅ Guide 014 envoyé à {resa_sel['Prénom_Nom']} !")
                             else:
-                                st.error(f"❌ Erreur Make (Code: {r.status_code})")
+                                st.error("❌ Erreur Make.")
                         except Exception as e:
-                            st.error(f"❌ Erreur technique : {e}")
+                            st.error(f"❌ Erreur : {e}")
                     
-                    # --- SI C'EST LE 119 ---
                     elif "119" in appart:
-                        st.warning(f"⚠️ Action impossible : {client_a_envoyer} est au 119. Ce bouton est réservé au guide du 014.")
-                    
+                        st.warning(f"⚠️ Action stoppée : {client_a_envoyer} est au 119. Pas d'envoi 014 possible.")
                     else:
-                        st.error("Appartement non reconnu pour cet envoi.")
-
+                        st.error("Appartement inconnu.")
             st.divider()
 
             # --- SECTION 2 : TABLEAU COMPLET ---
