@@ -83,12 +83,6 @@ if check_password():
             
             total_brut = df_cfg["Valeur Actuelle"].sum()
             
-            # Calcul de la répartition % pour le tableau
-            if total_brut > 0:
-                df_cfg["%"] = (df_cfg["Valeur Actuelle"] / total_brut) * 100
-            else:
-                df_cfg["%"] = 0
-
             def calc_crd(row):
                 try:
                     P, r, n = float(row["Montant Crédit"]), (float(row["Taux (%)"])/100)/12, int(row["Durée (mois)"])
@@ -101,49 +95,53 @@ if check_password():
 
             df_cfg["Capital Restant"] = df_cfg.apply(calc_crd, axis=1)
             total_crd = df_cfg["Capital Restant"].sum()
-            total_net = (total_brut + total_treso_dynamique) - total_crd
-            df_cfg["Patrimoine Net Bien"] = df_cfg["Valeur Actuelle"] - df_cfg["Capital Restant"]
+            total_net_patrimoine = (total_brut + total_treso_dynamique) - total_crd
+            df_cfg["Patrimoine Net"] = df_cfg["Valeur Actuelle"] - df_cfg["Capital Restant"]
             
-            # Calcul des rentabilités pour le graphique
-            df_cfg["Rentabilité Brut (%)"] = ( (df_cfg["Mensualité"] * 12) / (df_cfg["Prix Achat"] + df_cfg["Travaux"] + df_cfg["Frais Notaire"]) ) * 100
-            df_cfg["Rentabilité Net (%)"] = ( ((df_cfg["Mensualité"] * 12) - (df_cfg["Mensualité"] * 12 * 0.3)) / (df_cfg["Prix Achat"] + df_cfg["Travaux"] + df_cfg["Frais Notaire"]) ) * 100
+            # Pourcentages pour le graphique (Ratio Patrimoine Net / Valeur Actuelle)
+            df_cfg["% Net"] = (df_cfg["Patrimoine Net"] / df_cfg["Valeur Actuelle"] * 100).fillna(0)
+            df_cfg["% Dette"] = (df_cfg["Capital Restant"] / df_cfg["Valeur Actuelle"] * 100).fillna(0)
         else:
-            total_brut = total_crd = total_net = 0
+            total_brut = total_crd = total_net_patrimoine = 0
 
         st.title("🏛️ RNM IMMO - Tableau de Bord")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Patrimoine Brut", f"{total_brut:,.0f} €")
         m2.metric("Dette Bancaire", f"{total_crd:,.0f} €")
         m3.metric("Cash disponible", f"{total_treso_dynamique:,.2f} €")
-        m4.metric("Patrimoine Net", f"{total_net:,.0f} €")
+        m4.metric("Patrimoine Net", f"{total_net_patrimoine:,.0f} €")
         
         st.divider()
         st.subheader("⚙️ Configuration des Biens")
-        cols_order = ["Bien", "%", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"]
-        existing_cols = [c for c in cols_order if c in df_cfg.columns]
-        
-        edited_df = st.data_editor(df_cfg[existing_cols], num_rows="dynamic", use_container_width=True,
-                                  column_config={"%": st.column_config.NumberFormatColumn(format="%.1f %%")})
-        
+        edited_df = st.data_editor(df_cfg, num_rows="dynamic", use_container_width=True)
         if st.button("💾 Sauvegarder Biens"):
-            save_df = edited_df.drop(columns=["%"]) if "%" in edited_df.columns else edited_df
-            save_df.to_csv(CONFIG_FILE, index=False)
+            cols_to_save = [c for c in edited_df.columns if c not in ["Capital Restant", "Patrimoine Net", "% Net", "% Dette"]]
+            edited_df[cols_to_save].to_csv(CONFIG_FILE, index=False)
             st.rerun()
 
         if not df_cfg.empty:
             st.divider()
-            st.subheader("📊 Détail par Bien")
-            # Ajout des informations de % dans le graphique
-            fig = px.bar(df_cfg, x="Bien", y=["Patrimoine Net Bien", "Capital Restant"], 
+            st.subheader("📊 Détail par Bien (Répartition %)")
+            
+            # Préparation des données pour Plotly avec étiquettes
+            df_plot = df_cfg.copy()
+            fig = px.bar(df_plot, x="Bien", y=["Patrimoine Net", "Capital Restant"], 
                          barmode="stack", 
-                         color_discrete_map={"Patrimoine Net Bien": "#7030A0", "Capital Restant": "#E1E1E1"},
-                         hover_data={
-                             "Rentabilité Brut (%)": ":.2f",
-                             "Rentabilité Net (%)": ":.2f"
-                         })
+                         color_discrete_map={"Patrimoine Net": "#7030A0", "Capital Restant": "#E1E1E1"},
+                         text_auto='.1f') # Affiche les valeurs sur les barres
+            
+            # Customisation des étiquettes pour afficher le %
+            fig.update_traces(texttemplate='%{y:,.0f}', textposition='inside')
+            
+            # Ajout des annotations de % manuellement sur les barres pour coller à ta capture
+            for i, row in df_cfg.iterrows():
+                fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net']/2, text=f"{row['% Net']:.1f}%", showarrow=False, font=dict(color="white"))
+                if row['% Dette'] > 0:
+                    fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net'] + (row['Capital Restant']/2), text=f"{row['% Dette']:.1f}%", showarrow=False)
+
             st.plotly_chart(fig, use_container_width=True)
 
-    # --- PAGE COMPTA ---
+    # --- PAGE COMPTA (FIGÉE) ---
     elif page == "COMPTA":
         st.title("💰 Comptabilité - RNM IMMO")
         c1, c2, c3 = st.columns(3)
@@ -197,7 +195,7 @@ if check_password():
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
 
-    # --- NOUVELLES PAGES ---
+    # --- PAGES VIDES ---
     elif page == "RO 2026":
         st.title("📈 RO 2026")
     elif page == "Détail 014":
