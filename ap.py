@@ -381,7 +381,6 @@ if check_password():
         
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
         
-        # Structure des lignes pour un affichage complet
         categories = [
             "Nb nuits (Total)", "% occu (Total)", "P moyen (Total)",
             "--- RNM IMMO ---",
@@ -399,29 +398,29 @@ if check_password():
             m_num = i + 1
             days_in_month = (date(2026, m_num % 12 + 1, 1) - date(2026, m_num, 1)).days if m_num < 12 else 31
             
-            # --- DONNÉES STUDIOS ---
+            # --- DONNÉES RÉELLES ---
             res_014 = df_resa[(df_resa["Appartement"].isin(["014", "14", 14])) & (pd.to_datetime(df_resa["Date Arrivée"]).dt.month == m_num) & (pd.to_datetime(df_resa["Date Arrivée"]).dt.year == 2026)]
             res_119 = df_resa[(df_resa["Appartement"].isin(["119"])) & (pd.to_datetime(df_resa["Date Arrivée"]).dt.month == m_num) & (pd.to_datetime(df_resa["Date Arrivée"]).dt.year == 2026)]
             
             ca_014, men_014 = res_014["Montant"].sum(), len(res_014) * 20.0
             ca_119, men_119 = res_119["Montant"].sum(), len(res_119) * 20.0
-            
-            # Calcul des cibles par studio (somme des objectifs pour le mois/an)
-            obj_014 = df_obj_all[(df_obj_all["Année"] == 2026) & (df_obj_all["Mois"] == mois_nom) & (df_obj_all.get("Bien", "") == "014")]["Objectif"].sum() if "Bien" in df_obj_all.columns else 1250.0
-            obj_119 = df_obj_all[(df_obj_all["Année"] == 2026) & (df_obj_all["Mois"] == mois_nom) & (df_obj_all.get("Bien", "") == "119")]["Objectif"].sum() if "Bien" in df_obj_all.columns else 1250.0
 
-            # --- COMPTA ET RNM (RNM = 014 + 119) ---
+            # --- CORRECTION : LECTURE DES CIBLES SAISIES ---
+            # On cherche l'objectif dans df_obj_all sans valeur par défaut arbitraire
+            obj_014 = df_obj_all[(df_obj_all["Année"] == 2026) & (df_obj_all["Mois"] == mois_nom) & (df_obj_all["Bien"] == "014")]["Objectif"].sum()
+            obj_119 = df_obj_all[(df_obj_all["Année"] == 2026) & (df_obj_all["Mois"] == mois_nom) & (df_obj_all["Bien"] == "119")]["Objectif"].sum()
+
             df_c_m = df_compta_2026[pd.to_datetime(df_compta_2026['Date']).dt.month == m_num]
             ch_rnm = df_c_m[df_c_m["Type"] == "Dépense"]["Montant"].sum()
             cr_rnm = df_c_m[df_c_m["Type"] == "Crédit"]["Montant"].sum()
             
             total_ca = ca_014 + ca_119
             total_menages = men_014 + men_119
-            total_obj = obj_014 + obj_119  # Somme des cibles RNM = 014 + 119
-            total_nuits = len(res_014) + len(res_119)
+            total_obj = obj_014 + obj_119
             net_rnm = total_ca - ch_rnm - total_menages - cr_rnm
+            total_nuits = len(res_014) + len(res_119)
 
-            # Remplissage du dictionnaire
+            # Remplissage du tableau
             final_matrix["Nb nuits (Total)"].append(total_nuits)
             final_matrix["% occu (Total)"].append(f"{(total_nuits/(days_in_month*2)*100):.1f}%")
             final_matrix["P moyen (Total)"].append(f"{(total_ca/total_nuits if total_nuits > 0 else 0):.2f}€")
@@ -433,13 +432,11 @@ if check_password():
             final_matrix["Objectif (RNM)"].append(total_obj)
             final_matrix["% Objectif (RNM)"].append(f"{(total_ca/total_obj*100 if total_obj > 0 else 0):.1f}%")
             final_matrix["NET AV IMP (RNM)"].append(net_rnm)
-            
             final_matrix["--- EGUILLES 014 ---"].append("")
             final_matrix["CA (014)"].append(ca_014)
             final_matrix["FRAIS MENAGE (014)"].append(men_014)
             final_matrix["Objectif (014)"].append(obj_014)
             final_matrix["% Objectif (014)"].append(f"{(ca_014/obj_014*100 if obj_014 > 0 else 0):.1f}%")
-            
             final_matrix["--- EGUILLES 119 ---"].append("")
             final_matrix["CA (119)"].append(ca_119)
             final_matrix["CREDIT (119)"].append(cr_rnm)
@@ -447,29 +444,22 @@ if check_password():
             final_matrix["Objectif (119)"].append(obj_119)
             final_matrix["% Objectif (119)"].append(f"{(ca_119/obj_119*100 if obj_119 > 0 else 0):.1f}%")
 
-        # Affichage du tableau complet
-        st.subheader("📊 Tableau de Bord Global 2026")
-        df_ro_final = pd.DataFrame(final_matrix, index=mois_noms).T
-        st.table(df_ro_final) 
+        st.table(pd.DataFrame(final_matrix, index=mois_noms).T)
 
-        # --- SYNTHÈSE ANNUELLE BAS DE PAGE ---
+        # --- SYNTHÈSE ANNUELLE ---
         st.divider()
         st.subheader("🎯 Synthèse Annuelle RNM IMMO")
         
+        t_obj = sum(final_matrix["Objectif (RNM)"]) # Ici sera la somme de tes vraies cibles
         t_ca = sum(final_matrix["CA (RNM)"])
-        t_ch = sum(final_matrix["CHARGES (RNM)"])
-        t_men = sum(final_matrix["FRAIS MENAGE (RNM)"])
-        t_cr = sum(final_matrix["CREDIT (RNM)"])
-        t_obj = sum(final_matrix["Objectif (RNM)"]) # Somme globale des cibles
-        t_net = sum(final_matrix["NET AV IMP (RNM)"])
         
-        col1, col2, col3, col4 = st.columns(4)
-        col5, col6, col7, _ = st.columns(4)
+        c1, c2, c3, c4 = st.columns(4)
+        c5, c6, c7, _ = st.columns(4)
         
-        col1.metric("CA TOTAL", f"{t_ca:,.2f} €")
-        col2.metric("CHARGES", f"{t_ch:,.2f} €")
-        col3.metric("FRAIS MÉNAGE", f"{t_men:,.2f} €")
-        col4.metric("CRÉDIT", f"{t_cr:,.2f} €")
-        col5.metric("OBJECTIF", f"{t_obj:,.2f} €")
-        col6.metric("% OBJECTIF", f"{(t_ca/t_obj*100 if t_obj > 0 else 0):.1f}%")
-        col7.metric("NET AV IMP", f"{t_net:,.2f} €")
+        c1.metric("CA TOTAL", f"{t_ca:,.2f} €")
+        c2.metric("CHARGES", f"{sum(final_matrix['CHARGES (RNM)']):,.2f} €")
+        c3.metric("FRAIS MÉNAGE", f"{sum(final_matrix['FRAIS MENAGE (RNM)']):,.2f} €")
+        c4.metric("CRÉDIT", f"{sum(final_matrix['CREDIT (RNM)']):,.2f} €")
+        c5.metric("OBJECTIF", f"{t_obj:,.2f} €")
+        c6.metric("% OBJECTIF", f"{(t_ca/t_obj*100 if t_obj > 0 else 0):.1f}%")
+        c7.metric("NET AV IMP", f"{sum(final_matrix['NET AV IMP (RNM)']):,.2f} €")
