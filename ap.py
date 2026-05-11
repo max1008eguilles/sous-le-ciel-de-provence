@@ -9,7 +9,7 @@ from dateutil.relativedelta import relativedelta
 # --- CONFIG DE LA PAGE ---
 st.set_page_config(page_title="RNM IMMO - Expert", layout="wide")
 
-# --- SÉCURITÉ MULTI-UTILISATEURS ---
+# --- SÉCURITÉ ---
 def check_password():
     def password_entered():
         user = st.session_state["username"]
@@ -28,15 +28,7 @@ def check_password():
         st.text_input("Mot de passe", type="password", key="password")
         st.button("Se connecter", on_click=password_entered)
         return False
-    elif not st.session_state["password_correct"]:
-        st.title("🏛️ Accès RNM IMMO")
-        st.text_input("Identifiant", key="username")
-        st.text_input("Mot de passe", type="password", key="password")
-        st.button("Se connecter", on_click=password_entered)
-        st.error("🚫 Identifiant ou mot de passe incorrect.")
-        return False
-    else:
-        return True
+    return True
 
 if check_password():
     
@@ -72,7 +64,7 @@ if check_password():
     solde_cash_physique = get_solde("Cash")
     total_treso_dynamique = solde_cic + solde_cash_physique
 
-    # --- BARRE LATÉRALE ---
+    # --- SIDEBAR ---
     with st.sidebar:
         st.title("📂 Navigation")
         st.write(f"👤 Connecté : **{st.session_state.get('user_authenticated')}**")
@@ -89,6 +81,14 @@ if check_password():
             for c in ["Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
                 df_cfg[c] = pd.to_numeric(df_cfg[c], errors='coerce').fillna(0)
             
+            total_brut = df_cfg["Valeur Actuelle"].sum()
+            
+            # CALCUL DES % ICI
+            if total_brut > 0:
+                df_cfg["%"] = (df_cfg["Valeur Actuelle"] / total_brut) * 100
+            else:
+                df_cfg["%"] = 0
+
             def calc_crd(row):
                 try:
                     P, r, n = float(row["Montant Crédit"]), (float(row["Taux (%)"])/100)/12, int(row["Durée (mois)"])
@@ -99,17 +99,10 @@ if check_password():
                     return P * ((1 + r)**n - (1 + r)**m) / ((1 + r)**n - 1)
                 except: return 0
 
-            total_brut = df_cfg["Valeur Actuelle"].sum()
             df_cfg["Capital Restant"] = df_cfg.apply(calc_crd, axis=1)
             total_crd = df_cfg["Capital Restant"].sum()
             total_net = (total_brut + total_treso_dynamique) - total_crd
             df_cfg["Patrimoine Net Bien"] = df_cfg["Valeur Actuelle"] - df_cfg["Capital Restant"]
-            
-            # --- AJOUT DU CALCUL DES % ---
-            if total_brut > 0:
-                df_cfg["%"] = (df_cfg["Valeur Actuelle"] / total_brut) * 100
-            else:
-                df_cfg["%"] = 0
         else:
             total_brut = total_crd = total_net = 0
 
@@ -122,14 +115,16 @@ if check_password():
         
         st.divider()
         st.subheader("⚙️ Configuration des Biens")
-        # Affichage avec le pourcentage formaté
-        edited_df = st.data_editor(df_cfg, num_rows="dynamic", use_container_width=True)
+        
+        # On définit l'ordre des colonnes pour être sûr que % apparaisse
+        cols_order = ["Bien", "%", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"]
+        existing_cols = [c for c in cols_order if c in df_cfg.columns]
+        
+        edited_df = st.data_editor(df_cfg[existing_cols], num_rows="dynamic", use_container_width=True,
+                                  column_config={"%": st.column_config.NumberFormatColumn(format="%.1f %%")})
+        
         if st.button("💾 Sauvegarder Biens"):
-            # On ne sauvegarde pas la colonne calculée % pour éviter les doublons au chargement
-            if "%" in edited_df.columns:
-                save_df = edited_df.drop(columns=["%"])
-            else:
-                save_df = edited_df
+            save_df = edited_df.drop(columns=["%"]) if "%" in edited_df.columns else edited_df
             save_df.to_csv(CONFIG_FILE, index=False)
             st.rerun()
 
