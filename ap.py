@@ -67,4 +67,30 @@ st.divider()
 
 # --- SAISIE ET MODIFICATION ---
 st.subheader("⚙️ Configuration Précise des Biens")
-st.info("S
+st.info("Saisis tes chiffres d'achat et de crédit. Le système calcule l'amortissement automatiquement à la date d'aujourd'hui.")
+
+# Aide pour le format de date
+st.caption("Format Date Début : AAAA-MM-JJ (ex: 2023-01-01)")
+
+edited_df = st.data_editor(
+    df_cfg[["Bien", "Prix Achat", "Travaux", "Frais Notaire", "Apport", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"]],
+    num_rows="dynamic",
+    use_container_width=True
+)
+
+if st.button("💾 Sauvegarder et Recalculer"):
+    # Nettoyage et sauvegarde
+    edited_df.to_csv(CONFIG_FILE, index=False)
+    st.success("Données enregistrées ! Les compteurs en haut ont été mis à jour.")
+    st.rerun()
+
+# --- DÉTAIL PAR BIEN ---
+if not df_cfg.empty:
+    st.divider()
+    st.subheader("📊 Détail de la Valeur Nette par Bien")
+    # Petit graphique pour voir quel bien pèse le plus dans ton patrimoine net
+    import plotly.express as px
+    fig = px.bar(df_cfg, x="Bien", y=["Patrimoine Net", "Capital Restant"], 
+                 title="Répartition Valeur Nette vs Dette",
+                 color_discrete_sequence=['#7030A0', '#E1E1E1'])
+    st.plotly_chart(fig, use_container_width=True)
