@@ -48,7 +48,8 @@ if check_password():
                 "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"]
         if os.path.exists(CONFIG_FILE):
             df = pd.read_csv(CONFIG_FILE)
-            df["Date Début"] = pd.to_datetime(df["Date Début"]).dt.date
+            if "Date Début" in df.columns:
+                df["Date Début"] = pd.to_datetime(df["Date Début"]).dt.date
             return df
         return pd.DataFrame(columns=cols)
 
@@ -70,7 +71,8 @@ if check_password():
         df_c = df_compta[df_compta["Compte"] == compte_nom]
         rev = df_c[df_c["Type"] == "Revenu"]["Montant"].sum()
         dep = df_c[df_c["Type"] == "Dépense"]["Montant"].sum()
-        return float(rev - dep)
+        cre = df_c[df_c["Type"] == "Crédit"]["Montant"].sum() # Prise en compte du type Crédit
+        return float(rev - dep - cre)
 
     solde_cic = get_solde("CIC")
     solde_cash_physique = get_solde("Cash")
@@ -163,25 +165,31 @@ if check_password():
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
 
-        # --- NOUVELLE SECTION : RÉCAP MOIS PAR MOIS ---
-        st.divider()
-        st.subheader("📊 Analyse Mensuelle (Cash-Flow)")
-        
+        # --- SECTION RÉCAP MOIS ET ANNÉE ---
         if not df_compta.empty:
-            df_m = df_compta.copy()
-            df_m['Mois'] = df_m['Date'].dt.strftime('%Y-%m')
+            st.divider()
+            col_m, col_y = st.columns(2)
             
-            # Pivot pour avoir les colonnes Revenu, Dépense, Crédit par mois
-            recap = df_m.groupby(['Mois', 'Type'])['Montant'].sum().unstack(fill_value=0)
-            
-            # S'assurer que toutes les colonnes existent
-            for col in ["Revenu", "Dépense", "Crédit"]:
-                if col not in recap.columns: recap[col] = 0.0
-            
-            recap = recap.rename(columns={"Revenu": "Revenus (+)", "Dépense": "Charges (-)", "Crédit": "Crédit (-)"})
-            recap["Cash Flow Net"] = recap["Revenus (+)"] - recap["Charges (-)"] - recap["Crédit (-)"]
-            
-            # Affichage du tableau propre
-            st.table(recap.sort_index(ascending=False).style.format("{:,.2f} €"))
+            with col_m:
+                st.subheader("🗓️ Récapitulatif Mensuel")
+                df_m = df_compta.copy()
+                df_m['Mois'] = df_m['Date'].dt.strftime('%Y-%m')
+                recap_m = df_m.groupby(['Mois', 'Type'])['Montant'].sum().unstack(fill_value=0)
+                for col in ["Revenu", "Dépense", "Crédit"]:
+                    if col not in recap_m.columns: recap_m[col] = 0.0
+                recap_m = recap_m.rename(columns={"Revenu": "Revenus", "Dépense": "Charges", "Crédit": "Crédit"})
+                recap_m["Cash Flow"] = recap_m["Revenus"] - recap_m["Charges"] - recap_m["Crédit"]
+                st.table(recap_m.sort_index(ascending=False).style.format("{:,.2f} €"))
+
+            with col_y:
+                st.subheader("📅 Récapitulatif Annuel")
+                df_y = df_compta.copy()
+                df_y['Année'] = df_y['Date'].dt.strftime('%Y')
+                recap_y = df_y.groupby(['Année', 'Type'])['Montant'].sum().unstack(fill_value=0)
+                for col in ["Revenu", "Dépense", "Crédit"]:
+                    if col not in recap_y.columns: recap_y[col] = 0.0
+                recap_y = recap_y.rename(columns={"Revenu": "Total Revenus", "Dépense": "Total Charges", "Crédit": "Total Crédit"})
+                recap_y["Cash Flow Annuel"] = recap_y["Total Revenus"] - recap_y["Total Charges"] - recap_y["Total Crédit"]
+                st.table(recap_y.sort_index(ascending=False).style.format("{:,.2f} €"))
         else:
-            st.info("Ajoutez des données dans le journal pour voir l'analyse mensuelle.")
+            st.info("Ajoutez des données pour voir les analyses.")
