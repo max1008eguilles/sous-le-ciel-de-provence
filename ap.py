@@ -55,7 +55,7 @@ if check_password():
     def load_resa():
         if os.path.exists(RESA_FILE):
             df = pd.read_csv(RESA_FILE)
-            # FIX : On force la conversion en date pour éviter l'erreur StreamlitAPIException
+            # Fix pour les erreurs de format de date Streamlit
             df["Date Arrivée"] = pd.to_datetime(df["Date Arrivée"], errors='coerce').dt.date
             df["Date Départ"] = pd.to_datetime(df["Date Départ"], errors='coerce').dt.date
             return df
@@ -88,7 +88,7 @@ if check_password():
             st.session_state["password_correct"] = False
             st.rerun()
 
-    # --- PAGE RNM IMMO (FIGÉE) ---
+    # --- PAGE RNM IMMO (RETOUR À LA VERSION PROPRE) ---
     if page == "RNM IMMO":
         if not df_cfg.empty:
             for c in ["Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
@@ -134,7 +134,7 @@ if check_password():
                     fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net Bien'] + (row['Capital Restant']/2), text=f"<b>{row['Capital Restant']:,.0f}€</b><br>{row['% Dette']:.1f}%", showarrow=False)
             st.plotly_chart(fig, use_container_width=True)
 
-    # --- PAGE COMPTA (FIGÉE) ---
+    # --- PAGE COMPTA ---
     elif page == "COMPTA":
         st.title("💰 Comptabilité - RNM IMMO")
         c1, c2, c3 = st.columns(3)
@@ -147,15 +147,15 @@ if check_password():
             ed_c.to_csv(COMPTA_FILE, index=False)
             st.rerun()
 
-    # --- PAGE RÉSERVATIONS (RÉPARÉE) ---
+    # --- PAGE RÉSERVATIONS (AVEC COULEURS OK) ---
     elif page == "Réservations":
         st.title("📅 Gestion des Réservations")
         
-        # Sécurité pour le calcul automatique
+        # Sécurité pour le calcul automatique du Code Autre
         df_resa["Code Résidence"] = df_resa["Code Résidence"].fillna("").astype(str)
         df_resa["Code Autre"] = df_resa["Code Résidence"].apply(lambda x: x[:-1] if len(x) > 1 else "")
 
-        # Affichage du tableau (Le fix est dans load_resa)
+        # Tableau des réservations
         edited_resa = st.data_editor(
             df_resa, 
             num_rows="dynamic", 
@@ -177,8 +177,16 @@ if check_password():
         evts = []
         for _, r in edited_resa.iterrows():
             if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
-                c = "#1E90FF" if str(r["Appartement"]) == "014" else "#2E8B57"
-                evts.append({"title": f"[{r['Appartement']}] {r['Prénom_Nom']}", "start": str(r["Date Arrivée"]), "end": str(r["Date Départ"]), "color": c, "allDay": True})
+                # --- LES COULEURS SONT ICI ---
+                # Bleu (#0000FF) pour le 014, Vert (#008000) pour le 119
+                color = "blue" if str(r["Appartement"]) == "014" else "green"
+                evts.append({
+                    "title": f"[{r['Appartement']}] {r['Prénom_Nom']}", 
+                    "start": str(r["Date Arrivée"]), 
+                    "end": str(r["Date Départ"]), 
+                    "color": color, 
+                    "allDay": True
+                })
         
         calendar(events=evts, options={"initialView": "dayGridMonth", "locale": "fr"})
 
