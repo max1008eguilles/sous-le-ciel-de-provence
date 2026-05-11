@@ -374,84 +374,94 @@ if check_password():
             rows = [{"Date": d.strftime("%d/%m"), "Montant": f"{v['montant']:.2f} €" if v['montant'] > 0 else "-", "Client": v["client"], "Action": "🟢 Ménage" if v["menage"] else ""} for d,v in month_data.items()]
             st.table(pd.DataFrame(rows).style.apply(lambda x: ['background-color: #2E8B57; color: white' if 'Ménage' in str(x.Action) else '' for i in x], axis=1))
 
-    # --- PAGE RO 2026 ---
+   # --- PAGE RO 2026 ---
     elif page == "RO 2026":
         st.title("📈 Récapitulatif Opérationnel - RO 2026")
         
-        # 1. Préparation des données de base
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
-        data_ro = []
-        
-        # Filtrer la compta sur l'année en cours
+        ro_data = []
+
+        # Extraction des charges et crédits globaux de la compta pour 2026
         df_compta_2026 = df_compta[pd.to_datetime(df_compta['Date']).dt.year == 2026].copy()
-        
+
         for i, mois_nom in enumerate(mois_noms):
             m_num = i + 1
-            # Dates du mois
-            f_day = date(2026, m_num, 1)
-            l_day = (date(2026, m_num % 12 + 1, 1) - timedelta(days=1)) if m_num < 12 else date(2026, 12, 31)
             
-            # --- CA & Réservations (014 + 119) ---
-            resa_mois = df_resa[
-                (df_resa["Appartement"].isin(["014", "14", 14, "119"])) &
-                (pd.to_datetime(df_resa["Date Arrivée"]).dt.month == m_num) &
-                (pd.to_datetime(df_resa["Date Arrivée"]).dt.year == 2026)
-            ]
-            
-            ca_mois = resa_mois["Montant"].astype(float).sum()
-            nb_menages = len(resa_mois) # On compte un ménage par réservation
-            frais_menage = nb_menages * 20.0
-            
-            # --- Compta (Charges & Crédits) ---
+            # --- CALCUL STUDIO 014 ---
+            resa_014 = df_resa[(df_resa["Appartement"].isin(["014", "14", 14])) & 
+                               (pd.to_datetime(df_resa["Date Arrivée"]).dt.month == m_num) & 
+                               (pd.to_datetime(df_resa["Date Arrivée"]).dt.year == 2026)]
+            ca_014 = resa_014["Montant"].sum()
+            menages_014 = len(resa_014) * 20.0
+            obj_014 = df_obj_all[(df_obj_all["Année"] == 2026) & (df_obj_all["Mois"] == mois_nom) & (df_obj_all["Bien"] == "014")]["Objectif"].sum()
+            if obj_014 == 0: obj_014 = 1250.0 # Valeur par défaut si non défini
+
+            # --- CALCUL STUDIO 119 ---
+            resa_119 = df_resa[(df_resa["Appartement"].isin(["119"])) & 
+                               (pd.to_datetime(df_resa["Date Arrivée"]).dt.month == m_num) & 
+                               (pd.to_datetime(df_resa["Date Arrivée"]).dt.year == 2026)]
+            ca_119 = resa_119["Montant"].sum()
+            menages_119 = len(resa_119) * 20.0
+            obj_119 = df_obj_all[(df_obj_all["Année"] == 2026) & (df_obj_all["Mois"] == mois_nom) & (df_obj_all["Bien"] == "119")]["Objectif"].sum()
+            if obj_119 == 0: obj_119 = 1250.0
+
+            # --- DONNÉES COMPTA (GLOBALES) ---
             df_c_m = df_compta_2026[pd.to_datetime(df_compta_2026['Date']).dt.month == m_num]
-            charges = df_c_m[df_c_m["Type"] == "Dépense"]["Montant"].sum()
-            credits = df_c_m[df_c_m["Type"] == "Crédit"]["Montant"].sum()
-            
-            # --- Objectifs ---
-            obj_m = df_obj_all[(df_obj_all["Année"] == 2026) & (df_obj_all["Mois"] == mois_nom)]["Objectif"].sum()
-            
-            net_av_imp = ca_mois - charges - credits - frais_menage
-            
-            data_ro.append({
+            charges_ext = df_c_m[df_c_m["Type"] == "Dépense"]["Montant"].sum()
+            credits_bancaires = df_c_m[df_c_m["Type"] == "Crédit"]["Montant"].sum()
+
+            # --- CUMUL GLOBAL (RNM IMMO) ---
+            total_ca = ca_014 + ca_119
+            total_menages = menages_014 + menages_119
+            total_obj = obj_014 + obj_119
+            net_av_imp = total_ca - total_menages - charges_ext - credits_bancaires
+
+            ro_data.append({
                 "Mois": mois_nom,
-                "CA (€)": ca_mois,
-                "Objectif (€)": obj_m,
-                "% Objectif": (ca_mois / obj_m * 100) if obj_m > 0 else 0,
-                "Frais Ménage (€)": frais_menage,
-                "Charges (€)": charges,
-                "Crédits (€)": credits,
-                "Net av. Impôts (€)": net_av_imp
+                "CA Global": total_ca,
+                "Charges": charges_ext,
+                "Ménages": total_menages,
+                "Crédits": credits_bancaires,
+                "Objectif Global": total_obj,
+                "Net av. Imp.": net_av_imp,
+                "CA 014": ca_014,
+                "CA 119": ca_119,
+                "Ménages 014": menages_014,
+                "Ménages 119": menages_119
             })
 
-        df_ro = pd.DataFrame(data_ro)
+        df_ro = pd.DataFrame(ro_data)
 
-        # 2. Métriques Globales Annuelles
+        # Affichage des métriques annuelles (Top bar)
         c1, c2, c3, c4 = st.columns(4)
-        total_ca = df_ro["CA (€)"].sum()
-        total_obj = df_ro["Objectif (€)"].sum()
-        total_net = df_ro["Net av. Impôts (€)"].sum()
-        
-        c1.metric("CA Total 2026", f"{total_ca:,.2f} €")
-        c2.metric("Objectif Annuel", f"{total_obj:,.2f} €")
-        c3.metric("% Réalisation", f"{(total_ca/total_obj*100 if total_obj > 0 else 0):.1f}%")
-        c4.metric("Net av. Impôts", f"{total_net:,.2f} €")
+        c1.metric("CA Total 2026", f"{df_ro['CA Global'].sum():,.2f} €")
+        c2.metric("Objectif Annuel", f"{df_ro['Objectif Global'].sum():,.2f} €")
+        c3.metric("% Réalisation", f"{(df_ro['CA Global'].sum()/df_ro['Objectif Global'].sum()*100):.1f}%")
+        c4.metric("Net av. Impôts", f"{df_ro['Net av. Imp.'].sum():,.2f} €")
 
         st.divider()
 
-        # 3. Tableau Récapitulatif Mois par Mois
-        st.subheader("📊 Détail Mensuel Cumulé (014 + 119)")
+        # Tableau complet façon Screenshot
+        st.subheader("📊 Tableau de Bord Annuel Détaillé")
         
-        # Style pour le tableau
-        def color_net(val):
-            color = 'red' if val < 0 else 'green'
-            return f'color: {color}'
+        # Inversion pour avoir les mois en colonnes (optionnel, mais plus proche de ton Excel)
+        df_display = df_ro.set_index("Mois").T
 
-        st.table(df_ro.style.format({
-            "CA (€)": "{:,.2f}",
-            "Objectif (€)": "{:,.2f}",
-            "% Objectif": "{:.1f}%",
-            "Frais Ménage (€)": "{:,.2f}",
-            "Charges (€)": "{:,.2f}",
-            "Crédits (€)": "{:,.2f}",
-            "Net av. Impôts (€)": "{:,.2f}"
-        }).applymap(color_net, subset=["Net av. Impôts (€)"]))
+        def style_net(v):
+            return "color: red;" if v < 0 else "color: green;"
+
+        # Utilisation de style.format pour éviter l'AttributeError
+        st.dataframe(df_ro.style.format({
+            "CA Global": "{:,.2f} €",
+            "Charges": "{:,.2f} €",
+            "Ménages": "{:,.2f} €",
+            "Crédits": "{:,.2f} €",
+            "Objectif Global": "{:,.2f} €",
+            "Net av. Imp.": "{:,.2f} €",
+            "CA 014": "{:,.2f} €",
+            "CA 119": "{:,.2f} €"
+        }).applymap(style_net, subset=["Net av. Imp."]), use_container_width=True)
+
+        # Graphique de performance
+        st.subheader("📈 Évolution du Revenu Net")
+        st.line_chart(df_ro.set_index("Mois")["Net av. Imp."])
