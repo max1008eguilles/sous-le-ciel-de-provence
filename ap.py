@@ -243,7 +243,56 @@ if check_password():
                     })
             except: continue
         calendar(events=evts, options={"initialView": "dayGridMonth", "locale": "fr"})
+import requests
+import streamlit as st
 
+# --- DANS TA PAGE RÉSERVATIONS ---
+st.subheader("📋 Gestion des Guides d'Arrivée")
+
+# 1. Sélection du voyageur dans ton tableau global (df_resa)
+selected_index = st.selectbox(
+    "Sélectionnez une réservation :",
+    df_resa.index,
+    format_func=lambda x: f"{df_resa.loc[x, 'Nom']} - Appt: {df_resa.loc[x, 'Appartement']} (Arrivée: {df_resa.loc[x, 'Date arrivée']})"
+)
+
+# On récupère les données de la ligne choisie
+resa_selectionnee = df_resa.loc[selected_index]
+appart = str(resa_selectionnee['Appartement'])
+
+# 2. Logique du bouton conditionnel
+# On vérifie si c'est bien le 014 (ou 14)
+is_014 = "14" in appart or "014" in appart
+
+if is_014:
+    if st.button("🚀 Envoyer Guide 014"):
+        # URL spécifique que tu m'as donnée pour le 014
+        WEBHOOK_014 = "https://hook.eu2.make.com/7v3yap243qgcxbu8pc539owwgrvr32qt"
+        
+        # Préparation des données EXACTES pour ton Google Doc
+        payload = {
+            "Nom": str(resa_selectionnee['Nom']),
+            "Date_arrivée": str(resa_selectionnee['Date arrivée']),
+            "Date_départ": str(resa_selectionnee['Date départ']),
+            "Code_studio": str(resa_selectionnee['Code studio']),
+            "Code_résidence": str(resa_selectionnee['Code résidence']),
+            "Mail": str(resa_selectionnee['Mail'])
+        }
+        
+        try:
+            with st.spinner("Génération du guide 014 en cours..."):
+                r = requests.post(WEBHOOK_014, json=payload)
+            
+            if r.status_code == 200:
+                st.success(f"✅ Guide 014 généré avec succès pour {resa_selectionnee['Nom']} !")
+            else:
+                st.error(f"❌ Erreur Make ({r.status_code})")
+        except Exception as e:
+            st.error(f"❌ Connexion impossible : {e}")
+else:
+    # Si l'appart est le 119 ou autre, on grise ou on affiche un message
+    st.warning(f"⚠️ Cette réservation concerne l'appartement {appart}. Le bouton Guide 014 est désactivé.")
+    st.button("🚀 Envoyer Guide 014", disabled=True)
     # --- PAGE DÉTAIL 014 ---
     elif page == "Détail 014":
         st.title("🏠 Détail Studio 014")
