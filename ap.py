@@ -168,4 +168,18 @@ if check_password():
                 d = st.date_input("Date", date.today())
                 t = st.selectbox("Type", ["Revenu", "Dépense", "Crédit"])
                 cpt = st.selectbox("Compte", ["CIC", "Cash"])
-                m = st.number_input("Mont
+                m = st.number_input("Montant", min_value=0.0)
+                txt = st.text_input("Commentaire")
+                if st.form_submit_button("Valider"):
+                    new = pd.DataFrame([[d, t, cpt, m, txt, False]], columns=df_compta.columns)
+                    pd.concat([df_compta, new], ignore_index=True).to_csv(COMPTA_FILE, index=False)
+                    st.rerun()
+        
+        with c_list:
+            st.subheader("📝 Journal")
+            # Utilisation de column_config pour forcer le format date sans heure proprement
+            ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True, 
+                                 column_config={"Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY")})
+            if st.button("💾 Sauvegarder"):
+                ed_c.to_csv(COMPTA_FILE, index=False)
+                st.rerun()
