@@ -10,42 +10,34 @@ st.set_page_config(page_title="RNM IMMO - Expert", layout="wide")
 CONFIG_FILE = "config_biens_v3.csv"
 
 def load_data():
-    # Remplacement de 'Apport' par 'Montant Crédit'
-    cols = ["Bien", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", 
+    # Ajout de 'Valeur Actuelle' à la structure
+    cols = ["Bien", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", 
             "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"]
     if os.path.exists(CONFIG_FILE):
         df = pd.read_csv(CONFIG_FILE)
-        # Gestion de la transition Apport -> Montant Crédit si besoin
-        if "Apport" in df.columns and "Montant Crédit" not in df.columns:
-            df.rename(columns={"Apport": "Montant Crédit"}, inplace=True)
+        if "Valeur Actuelle" not in df.columns:
+            df["Valeur Actuelle"] = 0
         df["Date Début"] = pd.to_datetime(df["Date Début"]).dt.date
         return df
     return pd.DataFrame(columns=cols)
 
 df_cfg = load_data()
 
-# --- FONCTION CALCUL CAPITAL RESTANT (Basé sur Montant Initial) ---
+# --- FONCTION CALCUL CAPITAL RESTANT ---
 def calculer_capital_restant(row):
     try:
-        # P = Montant initial du crédit saisi par l'utilisateur
         P = float(row["Montant Crédit"])
         if P <= 0: return 0
-        
         r = (float(row["Taux (%)"]) / 100) / 12
         n = int(row["Durée (mois)"])
-        
         date_debut = row["Date Début"]
         if not isinstance(date_debut, (date, datetime)):
             return P
-            
         date_actuelle = date.today()
         diff = relativedelta(date_actuelle, date_debut)
         m_payees = diff.years * 12 + diff.months
-        
         if m_payees <= 0: return P
         if m_payees >= n: return 0
-        
-        # Formule CRD basée sur le montant emprunté P
         crd = P * ((1 + r)**n - (1 + r)**m_payees) / ((1 + r)**n - 1)
         return max(0, crd)
     except:
@@ -53,20 +45,21 @@ def calculer_capital_restant(row):
 
 # --- CALCULS GENERAUX ---
 if not df_cfg.empty:
-    for c in ["Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
+    for c in ["Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
         df_cfg[c] = pd.to_numeric(df_cfg[c], errors='coerce').fillna(0)
         
-    df_cfg["Valeur Brute"] = df_cfg["Prix Achat"] + df_cfg["Travaux"] + df_cfg["Frais Notaire"]
+    # Patrimoine Brut basé sur la colonne saisie à la main
+    total_brut = df_cfg["Valeur Actuelle"].sum()
     df_cfg["Capital Restant"] = df_cfg.apply(calculer_capital_restant, axis=1)
-    df_cfg["Patrimoine Net"] = df_cfg["Valeur Brute"] - df_cfg["Capital Restant"]
+    # Patrimoine Net = Valeur Actuelle - Dette
+    df_cfg["Patrimoine Net"] = df_cfg["Valeur Actuelle"] - df_cfg["Capital Restant"]
     
-    total_brut = df_cfg["Valeur Brute"].sum()
     total_crd = df_cfg["Capital Restant"].sum()
     total_net = df_cfg["Patrimoine Net"].sum()
 else:
     total_brut = total_crd = total_net = 0
 
-# --- INTERFACE (Fidèle à tes captures) ---
+# --- INTERFACE ---
 st.title("🏛️ RNM IMMO - Tableau de Bord Financier")
 st.subheader(f"= {len(df_cfg)} Biens immo")
 
@@ -79,19 +72,14 @@ st.divider()
 
 st.subheader("⚙️ Configuration Précise des Biens")
 
+# Affichage des colonnes avec 'Valeur Actuelle' en premier pour la saisie
 edited_df = st.data_editor(
-    df_cfg[["Bien", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"]],
+    df_cfg[["Bien", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"]],
     num_rows="dynamic",
     use_container_width=True,
     column_config={
-        "Date Début": st.column_config.DateColumn(
-            "Date Début",
-            format="DD/MM/YYYY"
-        ),
-        "Montant Crédit": st.column_config.NumberColumn(
-            "Montant Crédit",
-            help="Saisis ici le montant initial que tu as emprunté"
-        )
+        "Date Début": st.column_config.DateColumn("Date Début", format="DD/MM/YYYY"),
+        "Valeur Actuelle": st.column_config.NumberColumn("Valeur Actuelle", help="Saisis l'estimation du bien aujourd'hui")
     }
 )
 
