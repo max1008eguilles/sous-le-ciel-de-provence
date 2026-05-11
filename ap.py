@@ -60,7 +60,6 @@ if check_password():
     df_compta = load_compta()
     df_cfg = load_config()
 
-    # --- CALCULS TRESORERIE ---
     def get_solde(compte_nom):
         if df_compta.empty: return 0.0
         df_c = df_compta[df_compta["Compte"] == compte_nom]
@@ -73,7 +72,6 @@ if check_password():
     solde_cash_physique = get_solde("Cash")
     total_treso_dynamique = solde_cic + solde_cash_physique
 
-    # --- SIDEBAR ---
     with st.sidebar:
         st.title("📂 Navigation")
         st.write(f"👤 Connecté : **{st.session_state.get('user_authenticated')}**")
@@ -84,12 +82,10 @@ if check_password():
             st.session_state["password_correct"] = False
             st.rerun()
 
-    # --- PAGE PRINCIPALE ---
     if page == "RNM IMMO":
         if not df_cfg.empty:
             for c in ["Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
                 df_cfg[c] = pd.to_numeric(df_cfg[c], errors='coerce').fillna(0)
-            
             def calc_crd(row):
                 try:
                     P, r, n = float(row["Montant Crédit"]), (float(row["Taux (%)"])/100)/12, int(row["Durée (mois)"])
@@ -99,14 +95,12 @@ if check_password():
                     if m >= n: return 0
                     return P * ((1 + r)**n - (1 + r)**m) / ((1 + r)**n - 1)
                 except: return 0
-
             total_brut = df_cfg["Valeur Actuelle"].sum()
             df_cfg["Capital Restant"] = df_cfg.apply(calc_crd, axis=1)
             total_crd = df_cfg["Capital Restant"].sum()
             total_net = (total_brut + total_treso_dynamique) - total_crd
             df_cfg["Patrimoine Net Bien"] = df_cfg["Valeur Actuelle"] - df_cfg["Capital Restant"]
-        else:
-            total_brut = total_crd = total_net = 0
+        else: total_brut = total_crd = total_net = 0
 
         st.title("🏛️ RNM IMMO - Tableau de Bord")
         m1, m2, m3, m4 = st.columns(4)
@@ -114,26 +108,28 @@ if check_password():
         m2.metric("Dette Bancaire", f"{total_crd:,.0f} €")
         m3.metric("Cash disponible", f"{total_treso_dynamique:,.2f} €")
         m4.metric("Patrimoine Net", f"{total_net:,.0f} €")
-
         st.divider()
         st.subheader("⚙️ Configuration des Biens")
         edited_df = st.data_editor(df_cfg, num_rows="dynamic", use_container_width=True)
         if st.button("💾 Sauvegarder Biens"):
             edited_df.to_csv(CONFIG_FILE, index=False)
             st.rerun()
-
         if not df_cfg.empty:
             st.divider()
             st.subheader("📊 Détail par Bien")
             fig = px.bar(df_cfg, x="Bien", y=["Patrimoine Net Bien", "Capital Restant"], barmode="stack", color_discrete_map={"Patrimoine Net Bien": "#7030A0", "Capital Restant": "#E1E1E1"})
             st.plotly_chart(fig, use_container_width=True)
 
-    # --- PAGE COMPTA ---
     elif page == "COMPTA":
         st.title("💰 Comptabilité - RNM IMMO")
-        st.columns(3)[0].metric("TOTAL TRESORERIE", f"{total_treso_dynamique:,.2f} €")
         
-        # 1. ANALYSE FINANCIÈRE FUSIONNÉE
+        # RÉCAP TRÉSO (Remis exactement comme avant)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Montant CIC", f"{solde_cic:,.2f} €")
+        c2.metric("Montant Cash", f"{solde_cash_physique:,.2f} €")
+        c3.metric("TOTAL TRESORERIE", f"{total_treso_dynamique:,.2f} €")
+        
+        # ANALYSE FINANCIÈRE FUSIONNÉE (Période : TOTAL Année puis Mois)
         if not df_compta.empty:
             st.divider()
             st.subheader("📊 Analyse Financière")
@@ -159,7 +155,7 @@ if check_password():
             
             st.table(pd.DataFrame(final_rows).style.format("{:,.2f} €", subset=["Revenus", "Charges", "Crédit", "Cash Flow"]))
 
-        # 2. SAISIE ET JOURNAL
+        # AJOUT ET JOURNAL
         st.divider()
         c_add, c_list = st.columns([1, 2])
         with c_add:
@@ -174,12 +170,9 @@ if check_password():
                     new = pd.DataFrame([[d, t, cpt, m, txt, False]], columns=df_compta.columns)
                     pd.concat([df_compta, new], ignore_index=True).to_csv(COMPTA_FILE, index=False)
                     st.rerun()
-        
         with c_list:
             st.subheader("📝 Journal")
-            # Utilisation de column_config pour forcer le format date sans heure proprement
-            ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True, 
-                                 column_config={"Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY")})
+            ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True, column_config={"Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY")})
             if st.button("💾 Sauvegarder"):
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
