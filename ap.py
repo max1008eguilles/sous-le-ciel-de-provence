@@ -195,28 +195,52 @@ if check_password():
                 st.rerun()
 
     # --- PAGE RÉSERVATIONS ---
+    # --- PAGE RÉSERVATIONS (CORRIGÉE) ---
     elif page == "Réservations":
         st.title("📅 Gestion des Réservations")
+        
+        # Nettoyage et formatage rigoureux des données avant affichage
         df_resa["Code Résidence"] = df_resa["Code Résidence"].fillna("").astype(str)
         df_resa["Code Autre"] = df_resa["Code Résidence"].apply(lambda x: x[:-1] if len(x) > 1 else "")
+        
+        # S'assurer que les colonnes de date sont bien au format date pour l'éditeur
+        df_resa["Date Arrivée"] = pd.to_datetime(df_resa["Date Arrivée"]).dt.date
+        df_resa["Date Départ"] = pd.to_datetime(df_resa["Date Départ"]).dt.date
+
         edited_resa = st.data_editor(df_resa, num_rows="dynamic", use_container_width=True,
             column_config={
-                "Date Arrivée": st.column_config.DateColumn("Arrivée"),
-                "Date Départ": st.column_config.DateColumn("Départ"),
+                "Date Arrivée": st.column_config.DateColumn("Arrivée", format="YYYY-MM-DD", required=True),
+                "Date Départ": st.column_config.DateColumn("Départ", format="YYYY-MM-DD", required=True),
                 "Appartement": st.column_config.SelectboxColumn("Appartement", options=["014", "119"]),
                 "Montant": st.column_config.NumberColumn("Montant", format="%.2f €"),
+                "Numéro tel": st.column_config.TextColumn("Numéro tel"),
+                "Mail": st.column_config.TextColumn("Mail"),
                 "Code Autre": st.column_config.TextColumn("Code Autre", disabled=True)
             })
+
         if st.button("💾 Sauvegarder Réservations"):
-            edited_resa.to_csv(RESA_FILE, index=False)
+            # On force la conversion en string avant de sauvegarder en CSV pour éviter les dérives de format
+            df_to_save = edited_resa.copy()
+            df_to_save["Date Arrivée"] = df_to_save["Date Arrivée"].astype(str)
+            df_to_save["Date Départ"] = df_to_save["Date Départ"].astype(str)
+            df_to_save.to_csv(RESA_FILE, index=False)
+            st.success("Réservations sauvegardées !")
             st.rerun()
-        st.divider(); st.subheader("🗓️ Calendrier")
+
+        st.divider()
+        st.subheader("🗓️ Calendrier")
         evts = []
         for _, r in edited_resa.iterrows():
             if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
                 apt = str(r["Appartement"])
                 color = "#1E90FF" if "014" in apt else "#2E8B57" if "119" in apt else "#808080"
-                evts.append({"title": f"[{apt}] {r['Prénom_Nom']}", "start": str(r["Date Arrivée"]), "end": str(r["Date Départ"]), "color": color, "allDay": True})
+                evts.append({
+                    "title": f"[{apt}] {r['Prénom_Nom']}", 
+                    "start": str(r["Date Arrivée"]), 
+                    "end": str(r["Date Départ"]), 
+                    "color": color, 
+                    "allDay": True
+                })
         calendar(events=evts, options={"initialView": "dayGridMonth", "locale": "fr"})
 
     # --- PAGE DÉTAIL 014 (AVEC LIEN RÉSERVATIONS REMPLI) ---
