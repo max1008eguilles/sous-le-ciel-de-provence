@@ -251,6 +251,7 @@ if check_password():
         df_obj_year = df_obj_all[df_obj_all["Année"] == sel_year].copy()
         if df_obj_year.empty:
             df_obj_year = pd.DataFrame({"Année": [sel_year]*12, "Mois": mois_noms, "Objectif": [1250.0]*12})
+        
         with st.expander(f"🎯 Configurer les Objectifs du 014 pour l'année {sel_year}"):
             edited_obj = st.data_editor(df_obj_year, use_container_width=True, hide_index=True,
                 column_config={"Année": None, "Mois": st.column_config.TextColumn(disabled=True), "Objectif": st.column_config.NumberColumn("Objectif (€)", format="%.2f €")})
@@ -259,11 +260,14 @@ if check_password():
                 pd.concat([df_obj_others, edited_obj], ignore_index=True).to_csv(OBJ_FILE, index=False)
                 st.rerun()
         st.divider()
+
+        # Calcul des données mensuelles
         first_day = date(sel_year, sel_month, 1)
         last_day = (date(sel_year, sel_month % 12 + 1, 1) - timedelta(days=1)) if sel_month < 12 else date(sel_year, 12, 31)
         days_list = [first_day + timedelta(days=i) for i in range((last_day - first_day).days + 1)]
         resa_014 = df_resa[df_resa["Appartement"].isin(["014", "14", 14])].copy()
         month_data = {d: {"montant": 0.0, "menage": False, "client": ""} for d in days_list}
+        
         for _, r in resa_014.iterrows():
             if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
                 d_arr, d_dep = r["Date Arrivée"], r["Date Départ"]
@@ -276,15 +280,22 @@ if check_password():
                             month_data[curr]["montant"] = prix_par_nuit
                             month_data[curr]["client"] = r["Prénom_Nom"]
                         curr += timedelta(days=1)
-                    if d_dep in month_data:
-                        month_data[d_dep]["menage"] = True
+                    if d_dep in month_data: month_data[d_dep]["menage"] = True
+
         real_m = sum(v["montant"] for v in month_data.values())
+        obj_m_val = edited_obj.iloc[sel_month-1]["Objectif"]
+        perc_m = (real_m / obj_m_val * 100) if obj_m_val > 0 else 0
         nuits = sum(1 for v in month_data.values() if v["montant"] > 0)
-        m1, m2, m3, m4 = st.columns(4)
+        
+        # Affichage des métriques en haut
+        m1, m2, m3, m4, m5, m6 = st.columns(6)
         m1.metric("Réalisé Mois", f"{real_m:,.2f} €")
-        m2.metric("Nb Nuits", f"{nuits} j")
-        m3.metric("Prix Moyen", f"{(real_m/nuits if nuits > 0 else 0):,.2f} €")
-        m4.metric("% Occupation", f"{(nuits/len(days_list)*100):.1f}%")
+        m2.metric("Objectif Mois", f"{obj_m_val:,.2f} €")
+        m3.metric("% Réalisé", f"{perc_m:.1f}%")
+        m4.metric("Nb Nuits", f"{nuits} j")
+        m5.metric("Prix Moyen", f"{(real_m/nuits if nuits > 0 else 0):,.2f} €")
+        m6.metric("% Occupation", f"{(nuits/len(days_list)*100):.1f}%")
+
         col_g, col_d = st.columns([1, 4])
         with col_g:
             st.subheader(f"Global {sel_year}")
@@ -295,22 +306,13 @@ if check_password():
             st.metric("Restant", f"{max(0, obj_an - real_an):,.0f} €")
             st.progress(min(1.0, real_an / obj_an))
         with col_d:
-            rows = []
-            for d in days_list:
-                rows.append({"Date": d.strftime("%d/%m"), "Montant": f"{month_data[d]['montant']:.2f} €" if month_data[d]['montant'] > 0 else "-", "Client": month_data[d]["client"], "Action": "🟢 Ménage" if month_data[d]["menage"] else ""})
-            df_m = pd.DataFrame(rows)
-            def style_m(row):
-                if "Ménage" in str(row.Action): return ['background-color: #2E8B57; color: white'] * len(row)
-                return [''] * len(row)
-            st.table(df_m.style.apply(style_m, axis=1))
-            obj_m_val = edited_obj.iloc[sel_month-1]["Objectif"]
-            st.info(f"🎯 Objectif {edited_obj.iloc[sel_month-1]['Mois']} {sel_year} : **{obj_m_val:,.0f} €** |  Réalisé : **{(real_m/obj_m_val*100 if obj_m_val > 0 else 0):.1f}%**")
+            rows = [{"Date": d.strftime("%d/%m"), "Montant": f"{v['montant']:.2f} €" if v['montant'] > 0 else "-", "Client": v["client"], "Action": "🟢 Ménage" if v["menage"] else ""} for d,v in month_data.items()]
+            st.table(pd.DataFrame(rows).style.apply(lambda x: ['background-color: #2E8B57; color: white' if 'Ménage' in str(x.Action) else '' for i in x], axis=1))
 
-    # --- PAGE DÉTAIL 119 (COPIE EXACTE DU 014) ---
+    # --- PAGE DÉTAIL 119 ---
     elif page == "Détail 119":
         st.title("🏠 Détail Local 119")
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
-        # On utilise les mêmes objectifs ou tu pourras créer un OBJ_FILE_119 plus tard
         df_obj_year = df_obj_all[df_obj_all["Année"] == sel_year].copy()
         if df_obj_year.empty:
             df_obj_year = pd.DataFrame({"Année": [sel_year]*12, "Mois": mois_noms, "Objectif": [1250.0]*12})
@@ -323,11 +325,10 @@ if check_password():
                 pd.concat([df_obj_others, edited_obj], ignore_index=True).to_csv(OBJ_FILE, index=False)
                 st.rerun()
         st.divider()
+
         first_day = date(sel_year, sel_month, 1)
         last_day = (date(sel_year, sel_month % 12 + 1, 1) - timedelta(days=1)) if sel_month < 12 else date(sel_year, 12, 31)
         days_list = [first_day + timedelta(days=i) for i in range((last_day - first_day).days + 1)]
-        
-        # FILTRE SUR 119 ICI
         resa_119 = df_resa[df_resa["Appartement"].isin(["119"])].copy()
         month_data = {d: {"montant": 0.0, "menage": False, "client": ""} for d in days_list}
         
@@ -343,16 +344,21 @@ if check_password():
                             month_data[curr]["montant"] = prix_par_nuit
                             month_data[curr]["client"] = r["Prénom_Nom"]
                         curr += timedelta(days=1)
-                    if d_dep in month_data:
-                        month_data[d_dep]["menage"] = True
+                    if d_dep in month_data: month_data[d_dep]["menage"] = True
                         
         real_m = sum(v["montant"] for v in month_data.values())
+        obj_m_val = edited_obj.iloc[sel_month-1]["Objectif"]
+        perc_m = (real_m / obj_m_val * 100) if obj_m_val > 0 else 0
         nuits = sum(1 for v in month_data.values() if v["montant"] > 0)
-        m1, m2, m3, m4 = st.columns(4)
+
+        # Affichage des métriques en haut
+        m1, m2, m3, m4, m5, m6 = st.columns(6)
         m1.metric("Réalisé Mois", f"{real_m:,.2f} €")
-        m2.metric("Nb Nuits", f"{nuits} j")
-        m3.metric("Prix Moyen", f"{(real_m/nuits if nuits > 0 else 0):,.2f} €")
-        m4.metric("% Occupation", f"{(nuits/len(days_list)*100):.1f}%")
+        m2.metric("Objectif Mois", f"{obj_m_val:,.2f} €")
+        m3.metric("% Réalisé", f"{perc_m:.1f}%")
+        m4.metric("Nb Nuits", f"{nuits} j")
+        m5.metric("Prix Moyen", f"{(real_m/nuits if nuits > 0 else 0):,.2f} €")
+        m6.metric("% Occupation", f"{(nuits/len(days_list)*100):.1f}%")
         
         col_g, col_d = st.columns([1, 4])
         with col_g:
@@ -361,13 +367,11 @@ if check_password():
             real_an = sum(float(r["Montant"]) for _, r in resa_119.iterrows() if pd.notnull(r["Date Arrivée"]) and r["Date Arrivée"].year == sel_year)
             st.metric(f"Réalisé {sel_year}", f"{real_an:,.0f} €")
             st.write(f"Cible : {obj_an:,.0f} €")
+            st.metric("Restant", f"{max(0, obj_an - real_an):,.0f} €") # Ajout du restant annuel
             st.progress(min(1.0, real_an / obj_an))
             
         with col_d:
-            rows = []
-            for d in days_list:
-                rows.append({"Date": d.strftime("%d/%m"), "Montant": f"{month_data[d]['montant']:.2f} €" if month_data[d]['montant'] > 0 else "-", "Client": month_data[d]["client"], "Action": "🟢 Ménage" if month_data[d]["menage"] else ""})
-            df_m = pd.DataFrame(rows)
-            st.table(df_m.style.apply(lambda x: ['background-color: #2E8B57; color: white' if 'Ménage' in str(x.Action) else '' for i in x], axis=1))
+            rows = [{"Date": d.strftime("%d/%m"), "Montant": f"{v['montant']:.2f} €" if v['montant'] > 0 else "-", "Client": v["client"], "Action": "🟢 Ménage" if v["menage"] else ""} for d,v in month_data.items()]
+            st.table(pd.DataFrame(rows).style.apply(lambda x: ['background-color: #2E8B57; color: white' if 'Ménage' in str(x.Action) else '' for i in x], axis=1))
 
     elif page == "RO 2026": st.title("📈 RO 2026")
