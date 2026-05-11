@@ -36,7 +36,7 @@ if check_password():
     CONFIG_FILE = "config_biens_v3.csv"
     COMPTA_FILE = "compta_v3.csv"
     RESA_FILE = "reservations.csv"
-    OBJ_FILE = "objectifs_mensuels.csv" # Nouveau fichier pour stocker les objectifs
+    OBJ_FILE = "objectifs_014.csv"
 
     def load_config():
         if os.path.exists(CONFIG_FILE):
@@ -95,7 +95,7 @@ if check_password():
             st.session_state["password_correct"] = False
             st.rerun()
 
-    # --- PAGES RNM IMMO & COMPTA (SANS MODIF) ---
+    # --- PAGES RNM IMMO & COMPTA (ORIGINALES) ---
     if page == "RNM IMMO":
         st.title("🏛️ RNM IMMO - Tableau de Bord")
         if not df_cfg.empty:
@@ -145,23 +145,9 @@ if check_password():
             ed_c.to_csv(COMPTA_FILE, index=False)
             st.rerun()
 
-    # --- PAGE RÉSERVATIONS (MODIFIÉE POUR OBJECTIFS) ---
+    # --- PAGE RÉSERVATIONS (ORIGINALE) ---
     elif page == "Réservations":
         st.title("📅 Gestion des Réservations")
-        
-        # 1. Tableau des Objectifs Mensuels
-        st.subheader("🎯 Objectifs Mensuels")
-        edited_obj = st.data_editor(df_obj, use_container_width=True, hide_index=True,
-            column_config={"Objectif": st.column_config.NumberColumn("Objectif (€)", format="%.2f €")})
-        
-        if st.button("💾 Sauvegarder Objectifs"):
-            edited_obj.to_csv(OBJ_FILE, index=False)
-            st.rerun()
-        
-        st.divider()
-        
-        # 2. Tableau des Réservations (sans modif)
-        st.subheader("📝 Liste des Réservations")
         df_resa["Code Résidence"] = df_resa["Code Résidence"].fillna("").astype(str)
         df_resa["Code Autre"] = df_resa["Code Résidence"].apply(lambda x: x[:-1] if len(x) > 1 else "")
         edited_resa = st.data_editor(df_resa, num_rows="dynamic", use_container_width=True,
@@ -170,13 +156,13 @@ if check_password():
                 "Date Départ": st.column_config.DateColumn("Départ"),
                 "Appartement": st.column_config.SelectboxColumn("Appartement", options=["014", "119"]),
                 "Montant": st.column_config.NumberColumn("Montant", format="%.2f €"),
+                "Numéro tel": st.column_config.TextColumn("Numéro tel"),
                 "Mail": st.column_config.TextColumn("Mail"),
                 "Code Autre": st.column_config.TextColumn("Code Autre", disabled=True)
             })
         if st.button("💾 Sauvegarder Réservations"):
             edited_resa.to_csv(RESA_FILE, index=False)
             st.rerun()
-        
         st.divider(); st.subheader("🗓️ Calendrier")
         evts = []
         for _, r in edited_resa.iterrows():
@@ -186,10 +172,19 @@ if check_password():
                 evts.append({"title": f"[{apt}] {r['Prénom_Nom']}", "start": str(r["Date Arrivée"]), "end": str(r["Date Départ"]), "color": color, "allDay": True})
         calendar(events=evts, options={"initialView": "dayGridMonth", "locale": "fr"})
 
-    # --- PAGE DÉTAIL 014 (SANS COLONNE JOUR) ---
+    # --- PAGE DÉTAIL 014 (OBJECTIFS INCLUS ICI) ---
     elif page == "Détail 014":
-        st.title("🏠 Suivi détaillé - Local 014")
+        st.title("🏠 Détail Local 014")
         
+        # 1. SETUP DES OBJECTIFS (Saisie ici)
+        with st.expander("🎯 Configurer les Objectifs du 014"):
+            edited_obj = st.data_editor(df_obj, use_container_width=True, hide_index=True,
+                column_config={"Objectif": st.column_config.NumberColumn("Objectif (€)", format="%.2f €")})
+            if st.button("💾 Sauvegarder Objectifs"):
+                edited_obj.to_csv(OBJ_FILE, index=False)
+                st.rerun()
+        
+        st.divider()
         sel_year = st.sidebar.selectbox("Année", [2025, 2026], index=1)
         sel_month = st.sidebar.selectbox("Mois", list(range(1, 13)), index=date.today().month - 1)
         
@@ -219,28 +214,23 @@ if check_password():
         # Métriques haut
         real_m = sum(v["montant"] for v in month_data.values())
         nuits = sum(1 for v in month_data.values() if v["montant"] > 0)
-        
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Réalisé Mois", f"{real_m:,.2f} €")
         m2.metric("Nb Nuits", f"{nuits} j")
         m3.metric("Prix Moyen", f"{(real_m/nuits if nuits > 0 else 0):,.2f} €")
         m4.metric("% Occupation", f"{(nuits/len(days_list)*100):.1f}%")
 
-        st.divider()
         col_g, col_d = st.columns([1, 4])
-        
         with col_g:
             st.subheader("Global Année")
-            # L'objectif annuel est la somme des objectifs mensuels saisis en page Résa
-            obj_an = df_obj["Objectif"].sum() 
+            obj_an = edited_obj["Objectif"].sum() 
             real_an = sum(float(r["Montant"]) for _, r in resa_014.iterrows() if pd.notnull(r["Date Arrivée"]) and r["Date Arrivée"].year == sel_year)
-            st.metric("Réalisé 2026", f"{real_an:,.0f} €")
+            st.metric(f"Réalisé {sel_year}", f"{real_an:,.0f} €")
             st.write(f"Cible : {obj_an:,.0f} €")
             st.metric("Restant", f"{max(0, obj_an - real_an):,.0f} €")
             st.progress(min(1.0, real_an / obj_an))
 
         with col_d:
-            # Suppression de la colonne "Jour" comme demandé
             rows = []
             for d in days_list:
                 rows.append({
@@ -255,9 +245,9 @@ if check_password():
                 return [''] * len(row)
             st.table(df_m.style.apply(style_m, axis=1))
             
-            # Objectif du mois dynamique
-            obj_m_val = df_obj.iloc[sel_month-1]["Objectif"]
-            st.info(f"🎯 Objectif {df_obj.iloc[sel_month-1]['Mois']} : **{obj_m_val:,.0f} €** |  Performance : **{(real_m/obj_m_val*100 if obj_m_val > 0 else 0):.1f}%**")
+            # Objectif du mois
+            obj_m_val = edited_obj.iloc[sel_month-1]["Objectif"]
+            st.info(f"🎯 Objectif {edited_obj.iloc[sel_month-1]['Mois']} : **{obj_m_val:,.0f} €** |  Réalisé : **{(real_m/obj_m_val*100 if obj_m_val > 0 else 0):.1f}%**")
 
     elif page == "RO 2026": st.title("📈 RO 2026")
     elif page == "Détail 119": st.title("🏠 Détail 119")
