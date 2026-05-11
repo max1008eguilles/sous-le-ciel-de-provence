@@ -36,7 +36,7 @@ if check_password():
     CONFIG_FILE = "config_biens_v3.csv"
     COMPTA_FILE = "compta_v3.csv"
     RESA_FILE = "reservations.csv"
-    OBJ_FILE = "objectifs_014_v2.csv" # Fichier partagé pour les objectifs des deux biens
+    OBJ_FILE = "objectifs_014_v2.csv"
 
     def load_config():
         if os.path.exists(CONFIG_FILE):
@@ -65,10 +65,8 @@ if check_password():
 
     def load_objectifs():
         if os.path.exists(OBJ_FILE):
-            df = pd.read_csv(OBJ_FILE)
-            if "Bien" not in df.columns: df["Bien"] = "014" # Migration pour gérer plusieurs biens
-            return df
-        return pd.DataFrame(columns=["Année", "Mois", "Objectif", "Bien"])
+            return pd.read_csv(OBJ_FILE)
+        return pd.DataFrame(columns=["Année", "Mois", "Objectif"])
 
     df_compta = load_compta()
     df_cfg = load_config()
@@ -103,7 +101,7 @@ if check_password():
             st.session_state["password_correct"] = False
             st.rerun()
 
-    # --- LOGIQUE RNM IMMO, COMPTA, RÉSERVATIONS (INCHANGÉE) ---
+    # --- PAGE RNM IMMO ---
     if page == "RNM IMMO":
         st.title("🏛️ RNM IMMO - Tableau de Bord")
         if not df_cfg.empty:
@@ -140,101 +138,236 @@ if check_password():
         if not df_cfg.empty:
             st.divider()
             fig = px.bar(df_cfg, x="Bien", y=["Patrimoine Net Bien", "Capital Restant"], barmode="stack", color_discrete_map={"Patrimoine Net Bien": "#7030A0", "Capital Restant": "#E1E1E1"})
+            for i, row in df_cfg.iterrows():
+                fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net Bien']/2, text=f"<b>{row['Patrimoine Net Bien']:,.0f}€</b><br>{row['% Net']:.1f}%", showarrow=False, font=dict(color="white"))
+                if row['Capital Restant'] > 500:
+                    fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net Bien'] + (row['Capital Restant']/2), text=f"<b>{row['Capital Restant']:,.0f}€</b><br>{row['% Dette']:.1f}%", showarrow=False)
             st.plotly_chart(fig, use_container_width=True)
 
+    # --- PAGE COMPTA ---
     elif page == "COMPTA":
         st.title("💰 Comptabilité - RNM IMMO")
         c1, c2, c3 = st.columns(3)
         c1.metric("Montant CIC", f"{solde_cic:,.2f} €")
         c2.metric("Montant Cash", f"{solde_cash_physique:,.2f} €")
         c3.metric("TOTAL TRESORERIE", f"{total_treso_dynamique:,.2f} €")
+        if not df_compta.empty:
+            st.divider(); st.subheader("📊 Analyse Financière")
+            df_calc = df_compta.copy()
+            df_calc['Date'] = pd.to_datetime(df_calc['Date'])
+            df_calc['Année'] = df_calc['Date'].dt.strftime('%Y')
+            df_calc['Mois'] = df_calc['Date'].dt.strftime('%m/%Y')
+            recap_y = df_calc.groupby(['Année', 'Type'])['Montant'].sum().unstack(fill_value=0)
+            recap_m = df_calc.groupby(['Mois', 'Type', 'Année'])['Montant'].sum().unstack(level=1, fill_value=0)
+            for col in ["Revenu", "Dépense", "Crédit"]:
+                if col not in recap_y.columns: recap_y[col] = 0.0
+                if col not in recap_m.columns: recap_m[col] = 0.0
+            final_rows = []
+            for a in sorted(df_calc['Année'].unique(), reverse=True):
+                val_y = recap_y.loc[a]
+                final_rows.append({"Période": f"TOTAL {a}", "Revenus": val_y["Revenu"], "Charges": val_y["Dépense"], "Crédit": val_y["Crédit"], "Cash Flow": val_y["Revenu"]-val_y["Dépense"]-val_y["Crédit"]})
+                mes_mois = recap_m.xs(a, level='Année').sort_index(ascending=False)
+                for m, val_m in mes_mois.iterrows():
+                    final_rows.append({"Période": m, "Revenus": val_m["Revenu"], "Charges": val_m["Dépense"], "Crédit": val_m["Crédit"], "Cash Flow": val_m["Revenu"]-val_m["Dépense"]-val_m["Crédit"]})
+            st.table(pd.DataFrame(final_rows).style.format("{:,.2f} €", subset=["Revenus", "Charges", "Crédit", "Cash Flow"]))
         st.divider()
-        ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True)
-        if st.button("💾 Sauvegarder Compta"):
-            ed_c.to_csv(COMPTA_FILE, index=False)
-            st.rerun()
+        col_add, col_list = st.columns([1, 2])
+        with col_add:
+            st.subheader("➕ Ajouter")
+            with st.form("f_compta", clear_on_submit=True):
+                d = st.date_input("Date", date.today())
+                t = st.selectbox("Type", ["Revenu", "Dépense", "Crédit"])
+                cpt = st.selectbox("Compte", ["CIC", "Cash"])
+                m = st.number_input("Montant", min_value=0.0)
+                txt = st.text_input("Commentaire")
+                if st.form_submit_button("Valider"):
+                    new = pd.DataFrame([[d, t, cpt, m, txt, False]], columns=df_compta.columns)
+                    pd.concat([df_compta, new], ignore_index=True).to_csv(COMPTA_FILE, index=False)
+                    st.rerun()
+        with col_list:
+            st.subheader("📝 Journal")
+            ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True)
+            if st.button("💾 Sauvegarder Compta"):
+                ed_c.to_csv(COMPTA_FILE, index=False)
+                st.rerun()
 
+    # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
         st.title("📅 Gestion des Réservations")
         if os.path.exists(RESA_FILE):
             df_resa = pd.read_csv(RESA_FILE, dtype=str)
-        edited_resa = st.data_editor(df_resa, num_rows="dynamic", use_container_width=True, key="editor_final_v4")
-        if st.button("💾 SAUVEGARDER RÉSERVATIONS"):
-            edited_resa.to_csv(RESA_FILE, index=False)
+        for col in ["Date Arrivée", "Date Départ", "Appartement"]:
+            if col not in df_resa.columns:
+                df_resa[col] = ""
+        edited_resa = st.data_editor(
+            df_resa, 
+            num_rows="dynamic", 
+            use_container_width=True,
+            key="editor_final_v4",
+            column_config={
+                "Date Arrivée": st.column_config.TextColumn("Arrivée (AAAA-MM-JJ)", help="Ex: 2026-05-10"),
+                "Date Départ": st.column_config.TextColumn("Départ (AAAA-MM-JJ)", help="Ex: 2026-05-15"),
+                "Appartement": st.column_config.SelectboxColumn("Appartement", options=["014", "119"]),
+                "Montant": st.column_config.NumberColumn("Montant", format="%.2f €"),
+            }
+        )
+        if st.button("💾 SAUVEGARDER DÉFINITIVEMENT"):
+            df_to_save = edited_resa.copy()
+            def fix_year(row):
+                try:
+                    arr = str(row["Date Arrivée"])
+                    dep = str(row["Date Départ"])
+                    if "2025" in dep and "2026" in arr:
+                        return dep.replace("2025", "2026")
+                    return dep
+                except: return row["Date Départ"]
+            df_to_save["Date Départ"] = df_to_save.apply(fix_year, axis=1)
+            df_to_save.to_csv(RESA_FILE, index=False)
+            st.success("✅ Données nettoyées et sauvegardées !")
             st.rerun()
-        # Calendrier de contrôle
+        st.divider()
+        st.subheader("🗓️ Calendrier de contrôle")
         evts = []
         for _, r in edited_resa.iterrows():
             try:
-                d1, d2 = pd.to_datetime(r["Date Arrivée"]), pd.to_datetime(r["Date Départ"])
-                evts.append({"title": f"[{r['Appartement']}] {r['Prénom_Nom']}", "start": d1.strftime("%Y-%m-%d"), "end": d2.strftime("%Y-%m-%d"), "allDay": True})
+                d1 = pd.to_datetime(r["Date Arrivée"])
+                d2 = pd.to_datetime(r["Date Départ"])
+                if d2 >= d1:
+                    apt = str(r["Appartement"])
+                    color = "#1E90FF" if "014" in apt else "#2E8B57" if "119" in apt else "#808080"
+                    evts.append({
+                        "title": f"[{apt}] {r['Prénom_Nom']}", 
+                        "start": d1.strftime("%Y-%m-%d"), 
+                        "end": d2.strftime("%Y-%m-%d"), 
+                        "color": color, "allDay": True
+                    })
             except: continue
         calendar(events=evts, options={"initialView": "dayGridMonth", "locale": "fr"})
 
-    # --- PAGES DE DÉTAIL (014 & 119) ---
-    elif page in ["Détail 014", "Détail 119"]:
-        bien_id = "014" if page == "Détail 014" else "119"
-        st.title(f"🏠 Détail Local {bien_id}")
-        
-        # 1. Gestion des Objectifs spécifiques au bien
+    # --- PAGE DÉTAIL 014 ---
+    elif page == "Détail 014":
+        st.title("🏠 Détail Local 014")
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
-        df_obj_filter = df_obj_all[(df_obj_all["Année"] == sel_year) & (df_obj_all["Bien"] == bien_id)].copy()
-        if df_obj_filter.empty:
-            df_obj_filter = pd.DataFrame({"Année": [sel_year]*12, "Mois": mois_noms, "Objectif": [1250.0]*12, "Bien": [bien_id]*12})
-        
-        with st.expander(f"🎯 Objectifs {bien_id} - Année {sel_year}"):
-            edited_obj = st.data_editor(df_obj_filter, use_container_width=True, hide_index=True,
-                column_config={"Année": None, "Bien": None, "Mois": st.column_config.TextColumn(disabled=True), "Objectif": st.column_config.NumberColumn("Objectif (€)", format="%.2f €")})
-            if st.button(f"💾 Sauver Objectifs {bien_id}"):
-                df_obj_others = df_obj_all[~((df_obj_all["Année"] == sel_year) & (df_obj_all["Bien"] == bien_id))]
+        df_obj_year = df_obj_all[df_obj_all["Année"] == sel_year].copy()
+        if df_obj_year.empty:
+            df_obj_year = pd.DataFrame({"Année": [sel_year]*12, "Mois": mois_noms, "Objectif": [1250.0]*12})
+        with st.expander(f"🎯 Configurer les Objectifs du 014 pour l'année {sel_year}"):
+            edited_obj = st.data_editor(df_obj_year, use_container_width=True, hide_index=True,
+                column_config={"Année": None, "Mois": st.column_config.TextColumn(disabled=True), "Objectif": st.column_config.NumberColumn("Objectif (€)", format="%.2f €")})
+            if st.button("💾 Sauvegarder Objectifs"):
+                df_obj_others = df_obj_all[df_obj_all["Année"] != sel_year]
                 pd.concat([df_obj_others, edited_obj], ignore_index=True).to_csv(OBJ_FILE, index=False)
                 st.rerun()
-
         st.divider()
-        
-        # 2. Remplissage des données
         first_day = date(sel_year, sel_month, 1)
         last_day = (date(sel_year, sel_month % 12 + 1, 1) - timedelta(days=1)) if sel_month < 12 else date(sel_year, 12, 31)
         days_list = [first_day + timedelta(days=i) for i in range((last_day - first_day).days + 1)]
-        
-        resa_bien = df_resa[df_resa["Appartement"].astype(str).str.contains(bien_id)].copy()
+        resa_014 = df_resa[df_resa["Appartement"].isin(["014", "14", 14])].copy()
         month_data = {d: {"montant": 0.0, "menage": False, "client": ""} for d in days_list}
-        
-        for _, r in resa_bien.iterrows():
+        for _, r in resa_014.iterrows():
             if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
                 d_arr, d_dep = r["Date Arrivée"], r["Date Départ"]
                 delta = (d_dep - d_arr).days
                 if delta > 0:
-                    px_nuit = float(r["Montant"]) / delta
+                    prix_par_nuit = float(r["Montant"]) / delta
                     curr = d_arr
                     while curr < d_dep:
                         if curr in month_data:
-                            month_data[curr]["montant"] = px_nuit
+                            month_data[curr]["montant"] = prix_par_nuit
                             month_data[curr]["client"] = r["Prénom_Nom"]
                         curr += timedelta(days=1)
-                    if d_dep in month_data: month_data[d_dep]["menage"] = True
-
+                    if d_dep in month_data:
+                        month_data[d_dep]["menage"] = True
         real_m = sum(v["montant"] for v in month_data.values())
         nuits = sum(1 for v in month_data.values() if v["montant"] > 0)
-        
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Réalisé Mois", f"{real_m:,.2f} €")
         m2.metric("Nb Nuits", f"{nuits} j")
         m3.metric("Prix Moyen", f"{(real_m/nuits if nuits > 0 else 0):,.2f} €")
         m4.metric("% Occupation", f"{(nuits/len(days_list)*100):.1f}%")
-
-        # 3. Graphique & Tableau
         col_g, col_d = st.columns([1, 4])
         with col_g:
             st.subheader(f"Global {sel_year}")
             obj_an = edited_obj["Objectif"].sum() 
-            real_an = sum(float(r["Montant"]) for _, r in resa_bien.iterrows() if pd.notnull(r["Date Arrivée"]) and r["Date Arrivée"].year == sel_year)
+            real_an = sum(float(r["Montant"]) for _, r in resa_014.iterrows() if pd.notnull(r["Date Arrivée"]) and r["Date Arrivée"].year == sel_year)
             st.metric(f"Réalisé {sel_year}", f"{real_an:,.0f} €")
             st.write(f"Cible : {obj_an:,.0f} €")
-            st.progress(min(1.0, real_an / obj_an) if obj_an > 0 else 0)
-
+            st.metric("Restant", f"{max(0, obj_an - real_an):,.0f} €")
+            st.progress(min(1.0, real_an / obj_an))
         with col_d:
-            rows = [{"Date": d.strftime("%d/%m"), "Montant": f"{v['montant']:.2f} €" if v['montant'] > 0 else "-", "Client": v["client"], "Action": "🟢 Ménage" if v["menage"] else ""} for d,v in month_data.items()]
-            st.table(pd.DataFrame(rows).style.apply(lambda x: ['background-color: #2E8B57; color: white' if 'Ménage' in str(x.Action) else '' for i in x], axis=1))
+            rows = []
+            for d in days_list:
+                rows.append({"Date": d.strftime("%d/%m"), "Montant": f"{month_data[d]['montant']:.2f} €" if month_data[d]['montant'] > 0 else "-", "Client": month_data[d]["client"], "Action": "🟢 Ménage" if month_data[d]["menage"] else ""})
+            df_m = pd.DataFrame(rows)
+            def style_m(row):
+                if "Ménage" in str(row.Action): return ['background-color: #2E8B57; color: white'] * len(row)
+                return [''] * len(row)
+            st.table(df_m.style.apply(style_m, axis=1))
+            obj_m_val = edited_obj.iloc[sel_month-1]["Objectif"]
+            st.info(f"🎯 Objectif {edited_obj.iloc[sel_month-1]['Mois']} {sel_year} : **{obj_m_val:,.0f} €** |  Réalisé : **{(real_m/obj_m_val*100 if obj_m_val > 0 else 0):.1f}%**")
+
+    # --- PAGE DÉTAIL 119 (COPIE EXACTE DU 014) ---
+    elif page == "Détail 119":
+        st.title("🏠 Détail Local 119")
+        mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
+        # On utilise les mêmes objectifs ou tu pourras créer un OBJ_FILE_119 plus tard
+        df_obj_year = df_obj_all[df_obj_all["Année"] == sel_year].copy()
+        if df_obj_year.empty:
+            df_obj_year = pd.DataFrame({"Année": [sel_year]*12, "Mois": mois_noms, "Objectif": [1250.0]*12})
+        
+        with st.expander(f"🎯 Configurer les Objectifs du 119 pour l'année {sel_year}"):
+            edited_obj = st.data_editor(df_obj_year, use_container_width=True, hide_index=True,
+                column_config={"Année": None, "Mois": st.column_config.TextColumn(disabled=True), "Objectif": st.column_config.NumberColumn("Objectif (€)", format="%.2f €")})
+            if st.button("💾 Sauvegarder Objectifs 119"):
+                df_obj_others = df_obj_all[df_obj_all["Année"] != sel_year]
+                pd.concat([df_obj_others, edited_obj], ignore_index=True).to_csv(OBJ_FILE, index=False)
+                st.rerun()
+        st.divider()
+        first_day = date(sel_year, sel_month, 1)
+        last_day = (date(sel_year, sel_month % 12 + 1, 1) - timedelta(days=1)) if sel_month < 12 else date(sel_year, 12, 31)
+        days_list = [first_day + timedelta(days=i) for i in range((last_day - first_day).days + 1)]
+        
+        # FILTRE SUR 119 ICI
+        resa_119 = df_resa[df_resa["Appartement"].isin(["119"])].copy()
+        month_data = {d: {"montant": 0.0, "menage": False, "client": ""} for d in days_list}
+        
+        for _, r in resa_119.iterrows():
+            if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
+                d_arr, d_dep = r["Date Arrivée"], r["Date Départ"]
+                delta = (d_dep - d_arr).days
+                if delta > 0:
+                    prix_par_nuit = float(r["Montant"]) / delta
+                    curr = d_arr
+                    while curr < d_dep:
+                        if curr in month_data:
+                            month_data[curr]["montant"] = prix_par_nuit
+                            month_data[curr]["client"] = r["Prénom_Nom"]
+                        curr += timedelta(days=1)
+                    if d_dep in month_data:
+                        month_data[d_dep]["menage"] = True
+                        
+        real_m = sum(v["montant"] for v in month_data.values())
+        nuits = sum(1 for v in month_data.values() if v["montant"] > 0)
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Réalisé Mois", f"{real_m:,.2f} €")
+        m2.metric("Nb Nuits", f"{nuits} j")
+        m3.metric("Prix Moyen", f"{(real_m/nuits if nuits > 0 else 0):,.2f} €")
+        m4.metric("% Occupation", f"{(nuits/len(days_list)*100):.1f}%")
+        
+        col_g, col_d = st.columns([1, 4])
+        with col_g:
+            st.subheader(f"Global {sel_year}")
+            obj_an = edited_obj["Objectif"].sum() 
+            real_an = sum(float(r["Montant"]) for _, r in resa_119.iterrows() if pd.notnull(r["Date Arrivée"]) and r["Date Arrivée"].year == sel_year)
+            st.metric(f"Réalisé {sel_year}", f"{real_an:,.0f} €")
+            st.write(f"Cible : {obj_an:,.0f} €")
+            st.progress(min(1.0, real_an / obj_an))
+            
+        with col_d:
+            rows = []
+            for d in days_list:
+                rows.append({"Date": d.strftime("%d/%m"), "Montant": f"{month_data[d]['montant']:.2f} €" if month_data[d]['montant'] > 0 else "-", "Client": month_data[d]["client"], "Action": "🟢 Ménage" if month_data[d]["menage"] else ""})
+            df_m = pd.DataFrame(rows)
+            st.table(df_m.style.apply(lambda x: ['background-color: #2E8B57; color: white' if 'Ménage' in str(x.Action) else '' for i in x], axis=1))
 
     elif page == "RO 2026": st.title("📈 RO 2026")
