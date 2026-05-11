@@ -1,3 +1,5 @@
+streamlit
 pandas
 plotly
-streamlit-calendar
+python-dateutil
+numpy
