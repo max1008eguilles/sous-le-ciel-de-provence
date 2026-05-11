@@ -212,14 +212,12 @@ if check_password():
             # --- SECTION 1 : ENVOI RAPIDE (ARRIVÉES DU JOUR) ---
             st.subheader("🚀 Arrivées du jour")
             
-            # Calcul unique de la date de Paris (UTC + 2h pour l'été)
             from datetime import timedelta
             date_paris = (datetime.utcnow() + timedelta(hours=2)).strftime("%Y-%m-%d")
             
-            # On filtre le tableau avec CETTE date précise
             df_jour = df_resa[df_resa["Date Arrivée"] == date_paris].copy()
 
-           if df_jour.empty:
+            if df_jour.empty:
                 st.info(f"Aucune arrivée prévue aujourd'hui ({date_paris}).")
             else:
                 st.write(f"Vérification des arrivées pour : **{date_paris}**")
@@ -228,12 +226,11 @@ if check_password():
                     df_jour['Prénom_Nom'].unique()
                 )
                 
-                # Le bouton doit être aligné avec le st.write juste au-dessus
                 if st.button("📤 Envoyer le guide au client sélectionné"):
                     resa_sel = df_jour[df_jour['Prénom_Nom'] == client_a_envoyer].iloc[0]
                     appart = str(resa_sel.get('Appartement', ''))
 
-                    # SÉCURITÉ : Uniquement si c'est le 014
+                    # Sécurité Appartement 014
                     if "14" in appart or "014" in appart:
                         webhook_url = "https://hook.eu2.make.com/7v3yap243qgcxbu8pc539owwgrvr32qt"
                         payload = {
@@ -255,9 +252,10 @@ if check_password():
                             st.error(f"❌ Erreur : {e}")
                     
                     elif "119" in appart:
-                        st.warning(f"⚠️ Action stoppée : {client_a_envoyer} est au 119. Pas d'envoi 014 possible.")
+                        st.warning(f"⚠️ Action impossible : {client_a_envoyer} est au 119.")
                     else:
                         st.error("Appartement inconnu.")
+
             st.divider()
 
             # --- SECTION 2 : TABLEAU COMPLET ---
