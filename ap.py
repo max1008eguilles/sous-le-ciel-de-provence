@@ -9,7 +9,7 @@ from dateutil.relativedelta import relativedelta
 # --- CONFIG DE LA PAGE ---
 st.set_page_config(page_title="RNM IMMO - Expert", layout="wide")
 
-# --- SÉCURITÉ ---
+# --- SÉCURITÉ MULTI-UTILISATEURS ---
 def check_password():
     def password_entered():
         user = st.session_state["username"]
@@ -28,7 +28,15 @@ def check_password():
         st.text_input("Mot de passe", type="password", key="password")
         st.button("Se connecter", on_click=password_entered)
         return False
-    return True
+    elif not st.session_state["password_correct"]:
+        st.title("🏛️ Accès RNM IMMO")
+        st.text_input("Identifiant", key="username")
+        st.text_input("Mot de passe", type="password", key="password")
+        st.button("Se connecter", on_click=password_entered)
+        st.error("🚫 Identifiant ou mot de passe incorrect.")
+        return False
+    else:
+        return True
 
 if check_password():
     
@@ -64,7 +72,7 @@ if check_password():
     solde_cash_physique = get_solde("Cash")
     total_treso_dynamique = solde_cic + solde_cash_physique
 
-    # --- SIDEBAR ---
+    # --- BARRE LATÉRALE AVEC LES NOUVEAUX ONGLET ---
     with st.sidebar:
         st.title("📂 Navigation")
         st.write(f"👤 Connecté : **{st.session_state.get('user_authenticated')}**")
@@ -75,7 +83,7 @@ if check_password():
             st.session_state["password_correct"] = False
             st.rerun()
 
-    # --- PAGE 1 : RNM IMMO ---
+    # --- PAGE RNM IMMO ---
     if page == "RNM IMMO":
         if not df_cfg.empty:
             for c in ["Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
@@ -108,15 +116,23 @@ if check_password():
         if st.button("💾 Sauvegarder Biens"):
             edited_df.to_csv(CONFIG_FILE, index=False)
             st.rerun()
+        if not df_cfg.empty:
+            st.divider()
+            st.subheader("📊 Détail par Bien")
+            fig = px.bar(df_cfg, x="Bien", y=["Patrimoine Net Bien", "Capital Restant"], barmode="stack", color_discrete_map={"Patrimoine Net Bien": "#7030A0", "Capital Restant": "#E1E1E1"})
+            st.plotly_chart(fig, use_container_width=True)
 
-    # --- PAGE 2 : COMPTA ---
+    # --- PAGE COMPTA ---
     elif page == "COMPTA":
         st.title("💰 Comptabilité - RNM IMMO")
+        
+        # TES 3 METRICS (Remis comme l'original)
         c1, c2, c3 = st.columns(3)
         c1.metric("Montant CIC", f"{solde_cic:,.2f} €")
         c2.metric("Montant Cash", f"{solde_cash_physique:,.2f} €")
         c3.metric("TOTAL TRESORERIE", f"{total_treso_dynamique:,.2f} €")
         
+        # ANALYSE FINANCIÈRE FUSIONNÉE
         if not df_compta.empty:
             st.divider()
             st.subheader("📊 Analyse Financière")
@@ -124,8 +140,10 @@ if check_password():
             df_calc['Date'] = pd.to_datetime(df_calc['Date'])
             df_calc['Année'] = df_calc['Date'].dt.strftime('%Y')
             df_calc['Mois'] = df_calc['Date'].dt.strftime('%m/%Y')
+            
             recap_y = df_calc.groupby(['Année', 'Type'])['Montant'].sum().unstack(fill_value=0)
             recap_m = df_calc.groupby(['Mois', 'Type', 'Année'])['Montant'].sum().unstack(level=1, fill_value=0)
+            
             for col in ["Revenu", "Dépense", "Crédit"]:
                 if col not in recap_y.columns: recap_y[col] = 0.0
                 if col not in recap_m.columns: recap_m[col] = 0.0
@@ -137,11 +155,13 @@ if check_password():
                 mes_mois = recap_m.xs(a, level='Année').sort_index(ascending=False)
                 for m, val_m in mes_mois.iterrows():
                     final_rows.append({"Période": m, "Revenus": val_m["Revenu"], "Charges": val_m["Dépense"], "Crédit": val_m["Crédit"], "Cash Flow": val_m["Revenu"]-val_m["Dépense"]-val_m["Crédit"]})
+            
             st.table(pd.DataFrame(final_rows).style.format("{:,.2f} €", subset=["Revenus", "Charges", "Crédit", "Cash Flow"]))
 
+        # SAISIE ET JOURNAL
         st.divider()
-        c_add, c_list = st.columns([1, 2])
-        with c_add:
+        col_add, col_list = st.columns([1, 2])
+        with col_add:
             st.subheader("➕ Ajouter")
             with st.form("f_compta", clear_on_submit=True):
                 d = st.date_input("Date", date.today())
@@ -153,23 +173,6 @@ if check_password():
                     new = pd.DataFrame([[d, t, cpt, m, txt, False]], columns=df_compta.columns)
                     pd.concat([df_compta, new], ignore_index=True).to_csv(COMPTA_FILE, index=False)
                     st.rerun()
-        with c_list:
+        with col_list:
             st.subheader("📝 Journal")
-            ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True, 
-                                 column_config={"Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY")})
-            if st.button("💾 Sauvegarder"):
-                ed_c.to_csv(COMPTA_FILE, index=False)
-                st.rerun()
-
-    # --- NOUVELLES PAGES (Correctement branchées) ---
-    elif page == "RO 2026":
-        st.title("📈 RO 2026")
-        st.write("Espace de travail pour le suivi RO 2026.")
-
-    elif page == "Détail 014":
-        st.title("🏠 Détail EGUILLES 014")
-        st.write("Analyse détaillée pour le bien 014.")
-
-    elif page == "Détail 119":
-        st.title("🏠 Détail EGUILLES 119")
-        st.write("Analyse détaillée pour le bien 119.")
+            ed_c = st.
