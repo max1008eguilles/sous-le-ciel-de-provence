@@ -228,29 +228,39 @@ if check_password():
                     df_jour['Prénom_Nom'].unique()
                 )
                 
-                if st.button("📤 Envoyer le guide au client sélectionné"):
+               if st.button("📤 Envoyer le guide au client sélectionné"):
                     resa_sel = df_jour[df_jour['Prénom_Nom'] == client_a_envoyer].iloc[0]
+                    appart = str(resa_sel.get('Appartement', ''))
+
+                    # --- SÉCURITÉ : On ne déclenche que si c'est le 014 ---
+                    if "14" in appart or "014" in appart:
+                        webhook_url = "https://hook.eu2.make.com/7v3yap243qgcxbu8pc539owwgrvr32qt"
+                        
+                        payload = {
+                            "Nom": str(resa_sel['Prénom_Nom']),
+                            "Date_arrivée": str(resa_sel['Date Arrivée']),
+                            "Date_départ": str(resa_sel.get('Date Départ', '')),
+                            "Code_studio": str(resa_sel.get('Code Studio', '')),
+                            "Code_résidence": str(resa_sel.get('Code Résidence', '')),
+                            "Code_autre": str(resa_sel.get('Code Autre', '')),
+                            "Mail": str(resa_sel.get('Mail', ''))
+                        }
+                        
+                        try:
+                            r = requests.post(webhook_url, json=payload)
+                            if r.status_code == 200:
+                                st.success(f"✅ Guide 014 envoyé avec succès à {resa_sel['Prénom_Nom']} !")
+                            else:
+                                st.error(f"❌ Erreur Make (Code: {r.status_code})")
+                        except Exception as e:
+                            st.error(f"❌ Erreur technique : {e}")
                     
-                    # Ton webhook pour le 014
-                    webhook_url = "https://hook.eu2.make.com/7v3yap243qgcxbu8pc539owwgrvr32qt"
+                    # --- SI C'EST LE 119 ---
+                    elif "119" in appart:
+                        st.warning(f"⚠️ Action impossible : {client_a_envoyer} est au 119. Ce bouton est réservé au guide du 014.")
                     
-                    payload = {
-                        "Nom": str(resa_sel['Prénom_Nom']),
-                        "Date_arrivée": str(resa_sel['Date Arrivée']),
-                        "Date_départ": str(resa_sel.get('Date Départ', '')),
-                        "Code_studio": str(resa_sel.get('Code Studio', '')),
-                        "Code_résidence": str(resa_sel.get('Code Résidence', '')),
-                        "Code_autre": str(resa_sel.get('Code Autre', '')), # <-- Ajouté !
-                        "Mail": str(resa_sel.get('Mail', ''))             # <-- Présent !
-                    }
-                    try:
-                        r = requests.post(webhook_url, json=payload)
-                        if r.status_code == 200:
-                            st.success(f"✅ Guide envoyé à {resa_sel['Prénom_Nom']} !")
-                        else:
-                            st.error(f"❌ Erreur Make (Code: {r.status_code})")
-                    except Exception as e:
-                        st.error(f"❌ Erreur technique : {e}")
+                    else:
+                        st.error("Appartement non reconnu pour cet envoi.")
 
             st.divider()
 
