@@ -54,9 +54,13 @@ if check_password():
 
     def load_resa():
         if os.path.exists(RESA_FILE):
-            df = pd.read_csv(RESA_FILE, dtype={'Numéro tel': str, 'Appartement': str})
+            # On force tout en texte au chargement pour éviter les bugs
+            df = pd.read_csv(RESA_FILE, dtype=str)
             df["Date Arrivée"] = pd.to_datetime(df["Date Arrivée"], errors='coerce').dt.date
             df["Date Départ"] = pd.to_datetime(df["Date Départ"], errors='coerce').dt.date
+            # On convertit le montant en numérique pour les calculs si besoin
+            if "Montant" in df.columns:
+                df["Montant"] = pd.to_numeric(df["Montant"], errors='coerce').fillna(0.0)
             return df
         return pd.DataFrame(columns=["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Montant", "Numéro tel", "Mail", "Code Résidence", "Code Studio", "Code Autre"])
 
@@ -183,12 +187,15 @@ if check_password():
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
 
-   # --- PAGE RÉSERVATIONS (FIX FORMAT MAIL) ---
+    # --- PAGE RÉSERVATIONS (FIX TOTAL) ---
     elif page == "Réservations":
         st.title("📅 Gestion des Réservations")
+        
+        # Nettoyage des codes pour éviter les erreurs de calcul
         df_resa["Code Résidence"] = df_resa["Code Résidence"].fillna("").astype(str)
         df_resa["Code Autre"] = df_resa["Code Résidence"].apply(lambda x: x[:-1] if len(x) > 1 else "")
 
+        # Éditeur avec colonnes sécurisées (format Texte pour éviter les validations automatiques)
         edited_resa = st.data_editor(
             df_resa, 
             num_rows="dynamic", 
@@ -199,7 +206,7 @@ if check_password():
                 "Appartement": st.column_config.SelectboxColumn("Appartement", options=["014", "119"]),
                 "Montant": st.column_config.NumberColumn("Montant", format="%.2f €"),
                 "Numéro tel": st.column_config.TextColumn("Numéro tel"),
-                "Mail": st.column_config.TextColumn("Mail"), # Fix ici : format texte libre pour le mail
+                "Mail": st.column_config.TextColumn("Mail"), # Texte libre pour éviter l'erreur de validation
                 "Code Autre": st.column_config.TextColumn("Code Autre", disabled=True)
             }
         )
@@ -208,16 +215,23 @@ if check_password():
             edited_resa.to_csv(RESA_FILE, index=False)
             st.rerun()
 
-        st.divider(); st.subheader("🗓️ Calendrier Mensuel")
+        st.divider()
+        st.subheader("🗓️ Calendrier Mensuel")
         evts = []
         for _, r in edited_resa.iterrows():
             if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
                 apt = str(r["Appartement"])
+                # Bleu pour 014, Vert pour 119
                 color = "#1E90FF" if "014" in apt else "#2E8B57" if "119" in apt else "#808080"
-                evts.append({"title": f"[{apt}] {r['Prénom_Nom']}", "start": str(r["Date Arrivée"]), "end": str(r["Date Départ"]), "color": color, "allDay": True})
+                evts.append({
+                    "title": f"[{apt}] {r['Prénom_Nom']}", 
+                    "start": str(r["Date Arrivée"]), 
+                    "end": str(r["Date Départ"]), 
+                    "color": color, 
+                    "allDay": True
+                })
         
         calendar(events=evts, options={"initialView": "dayGridMonth", "locale": "fr"})
-        
 
     elif page == "RO 2026": st.title("📈 RO 2026")
     elif page in ["Détail 014", "Détail 119"]: st.title(f"🏠 {page}")
