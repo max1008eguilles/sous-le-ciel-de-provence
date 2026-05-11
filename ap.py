@@ -195,40 +195,58 @@ if check_password():
                 st.rerun()
 
     # --- PAGE RÉSERVATIONS ---
-    # --- PAGE RÉSERVATIONS (CORRIGÉE) ---
+   # --- PAGE RÉSERVATIONS (FIX GLOBAL DATES) ---
     elif page == "Réservations":
         st.title("📅 Gestion des Réservations")
         
-        # Nettoyage et formatage rigoureux des données avant affichage
+        # 1. Nettoyage de sécurité au chargement
+        # On s'assure que tout ce qui sort du CSV est transformé en vraie date Python
+        df_resa["Date Arrivée"] = pd.to_datetime(df_resa["Date Arrivée"], errors='coerce').dt.date
+        df_resa["Date Départ"] = pd.to_datetime(df_resa["Date Départ"], errors='coerce').dt.date
+        
+        # On gère les autres colonnes pour éviter les erreurs d'affichage
         df_resa["Code Résidence"] = df_resa["Code Résidence"].fillna("").astype(str)
         df_resa["Code Autre"] = df_resa["Code Résidence"].apply(lambda x: x[:-1] if len(x) > 1 else "")
-        
-        # S'assurer que les colonnes de date sont bien au format date pour l'éditeur
-        df_resa["Date Arrivée"] = pd.to_datetime(df_resa["Date Arrivée"]).dt.date
-        df_resa["Date Départ"] = pd.to_datetime(df_resa["Date Départ"]).dt.date
 
-        edited_resa = st.data_editor(df_resa, num_rows="dynamic", use_container_width=True,
+        # 2. L'éditeur avec configuration stricte
+        edited_resa = st.data_editor(
+            df_resa, 
+            num_rows="dynamic", 
+            use_container_width=True,
             column_config={
-                "Date Arrivée": st.column_config.DateColumn("Arrivée", format="YYYY-MM-DD", required=True),
-                "Date Départ": st.column_config.DateColumn("Départ", format="YYYY-MM-DD", required=True),
+                "Date Arrivée": st.column_config.DateColumn(
+                    "Arrivée", 
+                    format="DD/MM/YYYY", # Format visuel français
+                    required=True
+                ),
+                "Date Départ": st.column_config.DateColumn(
+                    "Départ", 
+                    format="DD/MM/YYYY", 
+                    required=True
+                ),
                 "Appartement": st.column_config.SelectboxColumn("Appartement", options=["014", "119"]),
                 "Montant": st.column_config.NumberColumn("Montant", format="%.2f €"),
-                "Numéro tel": st.column_config.TextColumn("Numéro tel"),
-                "Mail": st.column_config.TextColumn("Mail"),
                 "Code Autre": st.column_config.TextColumn("Code Autre", disabled=True)
-            })
+            }
+        )
 
+        # 3. Sauvegarde blindée
         if st.button("💾 Sauvegarder Réservations"):
-            # On force la conversion en string avant de sauvegarder en CSV pour éviter les dérives de format
-            df_to_save = edited_resa.copy()
-            df_to_save["Date Arrivée"] = df_to_save["Date Arrivée"].astype(str)
-            df_to_save["Date Départ"] = df_to_save["Date Départ"].astype(str)
-            df_to_save.to_csv(RESA_FILE, index=False)
-            st.success("Réservations sauvegardées !")
+            # On crée une copie propre pour le CSV
+            df_final = edited_resa.copy()
+            
+            # On force le format YYYY-MM-DD dans le fichier pour que pandas le reconnaisse toujours
+            df_final["Date Arrivée"] = pd.to_datetime(df_final["Date Arrivée"]).dt.strftime('%Y-%m-%d')
+            df_final["Date Départ"] = pd.to_datetime(df_final["Date Départ"]).dt.strftime('%Y-%m-%d')
+            
+            df_final.to_csv(RESA_FILE, index=False)
+            st.success("Données synchronisées avec succès !")
             st.rerun()
 
         st.divider()
         st.subheader("🗓️ Calendrier")
+        
+        # On utilise edited_resa pour le calendrier pour voir les modifs en temps réel
         evts = []
         for _, r in edited_resa.iterrows():
             if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
@@ -242,7 +260,6 @@ if check_password():
                     "allDay": True
                 })
         calendar(events=evts, options={"initialView": "dayGridMonth", "locale": "fr"})
-
     # --- PAGE DÉTAIL 014 (AVEC LIEN RÉSERVATIONS REMPLI) ---
     elif page == "Détail 014":
         st.title("🏠 Détail Local 014")
