@@ -230,6 +230,7 @@ if check_password():
                 
                 if st.button("📤 Envoyer le guide au client sélectionné"):
                     resa_sel = df_jour[df_jour['Prénom_Nom'] == client_a_envoyer].iloc[0]
+                    
                     # Ton webhook pour le 014
                     webhook_url = "https://hook.eu2.make.com/7v3yap243qgcxbu8pc539owwgrvr32qt"
                     
@@ -238,16 +239,18 @@ if check_password():
                         "Date_arrivée": str(resa_sel['Date Arrivée']),
                         "Date_départ": str(resa_sel.get('Date Départ', '')),
                         "Code_studio": str(resa_sel.get('Code Studio', '')),
-                        "Code_résidence": str(resa_sel.get('Code Résidence', ''))
+                        "Code_résidence": str(resa_sel.get('Code Résidence', '')),
+                        "Code_autre": str(resa_sel.get('Code Autre', '')), # <-- Ajouté !
+                        "Mail": str(resa_sel.get('Mail', ''))             # <-- Présent !
                     }
                     try:
                         r = requests.post(webhook_url, json=payload)
                         if r.status_code == 200:
                             st.success(f"✅ Guide envoyé à {resa_sel['Prénom_Nom']} !")
                         else:
-                            st.error("❌ Erreur Make.")
+                            st.error(f"❌ Erreur Make (Code: {r.status_code})")
                     except Exception as e:
-                        st.error(f"❌ Erreur : {e}")
+                        st.error(f"❌ Erreur technique : {e}")
 
             st.divider()
 
