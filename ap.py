@@ -6,7 +6,7 @@ import plotly.express as px
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 
-# --- CONFIG DE LA PAGE (Doit être en tout premier) ---
+# --- CONFIG DE LA PAGE ---
 st.set_page_config(page_title="RNM IMMO - Expert", layout="wide")
 
 # --- SÉCURITÉ MULTI-UTILISATEURS ---
@@ -38,10 +38,8 @@ def check_password():
     else:
         return True
 
-# Lancement de l'application si authentifié
 if check_password():
     
-    # --- FICHIERS ET CHARGEMENT ---
     CONFIG_FILE = "config_biens_v3.csv"
     COMPTA_FILE = "compta_v3.csv"
 
@@ -50,7 +48,6 @@ if check_password():
                 "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"]
         if os.path.exists(CONFIG_FILE):
             df = pd.read_csv(CONFIG_FILE)
-            if "Valeur Actuelle" not in df.columns: df["Valeur Actuelle"] = 0
             df["Date Début"] = pd.to_datetime(df["Date Début"]).dt.date
             return df
         return pd.DataFrame(columns=cols)
@@ -59,13 +56,15 @@ if check_password():
         cols = ["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"]
         if os.path.exists(COMPTA_FILE):
             df = pd.read_csv(COMPTA_FILE)
-            df["Date"] = pd.to_datetime(df["Date"]).dt.date
+            df["Date"] = pd.to_datetime(df["Date"])
             df["Montant"] = pd.to_numeric(df["Montant"], errors='coerce').fillna(0)
             return df
         return pd.DataFrame(columns=cols)
 
-    # --- CALCULS TRESORERIE ---
     df_compta = load_compta()
+    df_cfg = load_config()
+
+    # --- CALCULS TRESORERIE ---
     def get_solde(compte_nom):
         if df_compta.empty: return 0.0
         df_c = df_compta[df_compta["Compte"] == compte_nom]
@@ -80,10 +79,8 @@ if check_password():
     # --- BARRE LATÉRALE ---
     with st.sidebar:
         st.title("📂 Navigation")
-        # Affichage du nom sécurisé
         current_user = st.session_state.get('user_authenticated', 'Utilisateur')
         st.write(f"👤 Connecté : **{current_user}**")
-        
         page = st.radio("Aller vers :", ["RNM IMMO", "COMPTA"])
         st.divider()
         st.metric("Trésorerie Totale", f"{total_treso_dynamique:,.2f} €")
@@ -91,9 +88,8 @@ if check_password():
             st.session_state["password_correct"] = False
             st.rerun()
 
-    # --- PAGE PRINCIPALE ---
+    # --- PAGE RNM IMMO ---
     if page == "RNM IMMO":
-        df_cfg = load_config()
         if not df_cfg.empty:
             for c in ["Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
                 df_cfg[c] = pd.to_numeric(df_cfg[c], errors='coerce').fillna(0)
@@ -116,7 +112,7 @@ if check_password():
         else:
             total_brut = total_crd = total_net = 0
 
-        st.title("🏛️ RNM IMMO - Tableau de Bord Financier")
+        st.title("🏛️ RNM IMMO - Tableau de Bord")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Patrimoine Brut", f"{total_brut:,.0f} €")
         m2.metric("Dette Bancaire", f"{total_crd:,.0f} €")
@@ -124,50 +120,68 @@ if check_password():
         m4.metric("Patrimoine Net", f"{total_net:,.0f} €")
 
         st.divider()
-        st.subheader("⚙️ Configuration Précise des Biens")
-        edited_df = st.data_editor(df_cfg[["Bien", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"]], num_rows="dynamic", use_container_width=True, column_config={"Date Début": st.column_config.DateColumn("Date Début", format="DD/MM/YYYY")})
+        st.subheader("⚙️ Configuration des Biens")
+        edited_df = st.data_editor(df_cfg, num_rows="dynamic", use_container_width=True)
         if st.button("💾 Sauvegarder Biens"):
             edited_df.to_csv(CONFIG_FILE, index=False)
             st.rerun()
 
         if not df_cfg.empty:
             st.divider()
-            st.subheader("📊 Détail par Bien (Répartition %)")
+            st.subheader("📊 Détail par Bien")
             df_plot = df_cfg.copy()
-            df_plot['val_ref'] = df_plot['Valeur Actuelle'].apply(lambda x: x if x > 0 else 1)
-            df_plot['% Net'] = (df_plot['Patrimoine Net Bien'] / df_plot['val_ref'] * 100).round(1).astype(str) + '%'
-            df_plot['% Dette'] = (df_plot['Capital Restant'] / df_plot['val_ref'] * 100).round(1).astype(str) + '%'
             fig = px.bar(df_plot, x="Bien", y=["Patrimoine Net Bien", "Capital Restant"], barmode="stack", color_discrete_map={"Patrimoine Net Bien": "#7030A0", "Capital Restant": "#E1E1E1"})
-            fig.update_traces(name="Patrimoine Net", selector=dict(name="Patrimoine Net Bien"), text=df_plot['% Net'], textposition='inside')
-            fig.update_traces(name="Capital Restant", selector=dict(name="Capital Restant"), text=df_plot['% Dette'], textposition='inside')
             st.plotly_chart(fig, use_container_width=True)
 
-    # PAGE COMPTA
+    # --- PAGE COMPTA ---
     elif page == "COMPTA":
         st.title("💰 Comptabilité - RNM IMMO")
         c1, c2, c3 = st.columns(3)
         c1.metric("Montant CIC", f"{solde_cic:,.2f} €")
         c2.metric("Montant Cash", f"{solde_cash_physique:,.2f} €")
         c3.metric("TOTAL TRESORERIE", f"{total_treso_dynamique:,.2f} €")
+        
         st.divider()
         col_add, col_list = st.columns([1, 2])
         with col_add:
             st.subheader("➕ Ajouter")
             with st.form("f_compta"):
                 d = st.date_input("Date", date.today())
-                t = st.selectbox("Type", ["Revenu", "Dépense"])
+                t = st.selectbox("Type", ["Revenu", "Dépense", "Crédit"])
                 cpt = st.selectbox("Compte", ["CIC", "Cash"])
                 m = st.number_input("Montant", min_value=0.0)
                 txt = st.text_input("Commentaire")
-                check = st.checkbox("Justificatif ?")
                 if st.form_submit_button("Valider"):
-                    new = pd.DataFrame([[d, t, cpt, m, txt, check]], columns=df_compta.columns)
+                    new = pd.DataFrame([[pd.to_datetime(d), t, cpt, m, txt, False]], columns=df_compta.columns)
                     pd.concat([df_compta, new], ignore_index=True).to_csv(COMPTA_FILE, index=False)
                     st.rerun()
+        
         with col_list:
             st.subheader("📝 Journal")
-            st.caption("💡 Cliquez à gauche d'une ligne, puis 'Suppr' pour supprimer.")
-            ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True, column_config={"Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"), "Justificatif": st.column_config.CheckboxColumn("Justificatif")})
+            ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True)
             if st.button("💾 Sauvegarder Compta"):
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
+
+        # --- NOUVELLE SECTION : RÉCAP MOIS PAR MOIS ---
+        st.divider()
+        st.subheader("📊 Analyse Mensuelle (Cash-Flow)")
+        
+        if not df_compta.empty:
+            df_m = df_compta.copy()
+            df_m['Mois'] = df_m['Date'].dt.strftime('%Y-%m')
+            
+            # Pivot pour avoir les colonnes Revenu, Dépense, Crédit par mois
+            recap = df_m.groupby(['Mois', 'Type'])['Montant'].sum().unstack(fill_value=0)
+            
+            # S'assurer que toutes les colonnes existent
+            for col in ["Revenu", "Dépense", "Crédit"]:
+                if col not in recap.columns: recap[col] = 0.0
+            
+            recap = recap.rename(columns={"Revenu": "Revenus (+)", "Dépense": "Charges (-)", "Crédit": "Crédit (-)"})
+            recap["Cash Flow Net"] = recap["Revenus (+)"] - recap["Charges (-)"] - recap["Crédit (-)"]
+            
+            # Affichage du tableau propre
+            st.table(recap.sort_index(ascending=False).style.format("{:,.2f} €"))
+        else:
+            st.info("Ajoutez des données dans le journal pour voir l'analyse mensuelle.")
