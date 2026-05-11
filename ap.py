@@ -10,6 +10,15 @@ from dateutil.relativedelta import relativedelta
 st.set_page_config(page_title="RNM IMMO - Expert", layout="wide")
 CONFIG_FILE = "config_biens_v3.csv"
 
+# --- BARRE LATÉRALE (MENU) ---
+with st.sidebar:
+    st.title("📂 Navigation")
+    # Le menu demandé
+    page = st.radio("Aller vers :", ["RNM IMMO", "COMPTA"])
+    st.divider()
+    st.info("RNM IMMO : Tableau de bord financier complet.\n\nCOMPTA : Gestion des flux (à venir).")
+
+# --- FONCTIONS DE CHARGEMENT ET CALCULS (Inchangées) ---
 def load_data():
     cols = ["Bien", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", 
             "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"]
@@ -21,9 +30,6 @@ def load_data():
         return df
     return pd.DataFrame(columns=cols)
 
-df_cfg = load_data()
-
-# --- FONCTION CALCUL CAPITAL RESTANT ---
 def calculer_capital_restant(row):
     try:
         P = float(row["Montant Crédit"])
@@ -43,72 +49,66 @@ def calculer_capital_restant(row):
     except:
         return 0
 
-# --- CALCULS GENERAUX ---
-# Initialisation du Cash à 0€ (on configurera la source plus tard)
-cash_disponible = 0.0
+# --- AFFICHAGE SELON LA PAGE SÉLECTIONNÉE ---
 
-if not df_cfg.empty:
-    for c in ["Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
-        df_cfg[c] = pd.to_numeric(df_cfg[c], errors='coerce').fillna(0)
-    
-    total_brut = df_cfg["Valeur Actuelle"].sum()
-    df_cfg["Capital Restant"] = df_cfg.apply(calculer_capital_restant, axis=1)
-    
-    total_crd = df_cfg["Capital Restant"].sum()
-    
-    # Nouveau calcul du Patrimoine Net incluant le Cash
-    total_net = (total_brut + cash_disponible) - total_crd
-    
-    # Pour le graphique, on garde la répartition par bien
-    df_cfg["Patrimoine Net Bien"] = df_cfg["Valeur Actuelle"] - df_cfg["Capital Restant"]
-else:
-    total_brut = total_crd = total_net = 0
+if page == "RNM IMMO":
+    # --- TA PAGE PRINCIPALE (CONTENU INITIAL FIGÉ) ---
+    df_cfg = load_data()
+    cash_disponible = 0.0
 
-# --- INTERFACE ---
-st.title("🏛️ RNM IMMO - Tableau de Bord Financier")
-st.subheader(f"= {len(df_cfg)} Biens immo")
+    if not df_cfg.empty:
+        for c in ["Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
+            df_cfg[c] = pd.to_numeric(df_cfg[c], errors='coerce').fillna(0)
+        
+        total_brut = df_cfg["Valeur Actuelle"].sum()
+        df_cfg["Capital Restant"] = df_cfg.apply(calculer_capital_restant, axis=1)
+        total_crd = df_cfg["Capital Restant"].sum()
+        total_net = (total_brut + cash_disponible) - total_crd
+        df_cfg["Patrimoine Net Bien"] = df_cfg["Valeur Actuelle"] - df_cfg["Capital Restant"]
+    else:
+        total_brut = total_crd = total_net = 0
 
-# Affichage en 4 colonnes pour intégrer le Cash
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Patrimoine Brut", f"{total_brut:,.0f} €")
-m2.metric("Dette Bancaire", f"{total_crd:,.0f} €", delta=f"-{total_brut-total_crd:,.0f} remboursés", delta_color="normal")
-m3.metric("Cash disponible", f"{cash_disponible:,.0f} €")
-m4.metric("Patrimoine Net", f"{total_net:,.0f} €")
+    st.title("🏛️ RNM IMMO - Tableau de Bord Financier")
+    st.subheader(f"= {len(df_cfg)} Biens immo")
 
-st.divider()
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Patrimoine Brut", f"{total_brut:,.0f} €")
+    m2.metric("Dette Bancaire", f"{total_crd:,.0f} €", delta=f"-{total_brut-total_crd:,.0f} remboursés", delta_color="normal")
+    m3.metric("Cash disponible", f"{cash_disponible:,.0f} €")
+    m4.metric("Patrimoine Net", f"{total_net:,.0f} €")
 
-st.subheader("⚙️ Configuration Précise des Biens")
-edited_df = st.data_editor(
-    df_cfg[["Bien", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"]],
-    num_rows="dynamic",
-    use_container_width=True,
-    column_config={
-        "Date Début": st.column_config.DateColumn("Date Début", format="DD/MM/YYYY"),
-    }
-)
-
-if st.button("💾 Sauvegarder et Recalculer"):
-    edited_df.to_csv(CONFIG_FILE, index=False)
-    st.success("Données enregistrées !")
-    st.rerun()
-
-# --- GRAPHIQUE AVEC % ---
-if not df_cfg.empty:
     st.divider()
-    st.subheader("📊 Détail par Bien (Répartition %)")
-    
-    df_plot = df_cfg.copy()
-    df_plot['val_ref'] = df_plot['Valeur Actuelle'].apply(lambda x: x if x > 0 else 1)
-    
-    df_plot['% Net'] = (df_plot['Patrimoine Net Bien'] / df_plot['val_ref'] * 100).round(1).astype(str) + '%'
-    df_plot['% Dette'] = (df_plot['Capital Restant'] / df_plot['val_ref'] * 100).round(1).astype(str) + '%'
+    st.subheader("⚙️ Configuration Précise des Biens")
+    edited_df = st.data_editor(
+        df_cfg[["Bien", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"]],
+        num_rows="dynamic",
+        use_container_width=True,
+        column_config={"Date Début": st.column_config.DateColumn("Date Début", format="DD/MM/YYYY")}
+    )
 
-    fig = px.bar(df_plot, x="Bien", y=["Patrimoine Net Bien", "Capital Restant"], 
-                 barmode="stack",
-                 color_discrete_map={"Patrimoine Net Bien": "#7030A0", "Capital Restant": "#E1E1E1"},
-                 text_auto=False)
-    
-    fig.update_traces(name="Patrimoine Net", selector=dict(name="Patrimoine Net Bien"), text=df_plot['% Net'], textposition='inside')
-    fig.update_traces(name="Capital Restant", selector=dict(name="Capital Restant"), text=df_plot['% Dette'], textposition='inside')
+    if st.button("💾 Sauvegarder et Recalculer"):
+        edited_df.to_csv(CONFIG_FILE, index=False)
+        st.success("Données enregistrées !")
+        st.rerun()
 
-    st.plotly_chart(fig, use_container_width=True)
+    if not df_cfg.empty:
+        st.divider()
+        st.subheader("📊 Détail par Bien (Répartition %)")
+        df_plot = df_cfg.copy()
+        df_plot['val_ref'] = df_plot['Valeur Actuelle'].apply(lambda x: x if x > 0 else 1)
+        df_plot['% Net'] = (df_plot['Patrimoine Net Bien'] / df_plot['val_ref'] * 100).round(1).astype(str) + '%'
+        df_plot['% Dette'] = (df_plot['Capital Restant'] / df_plot['val_ref'] * 100).round(1).astype(str) + '%'
+
+        fig = px.bar(df_plot, x="Bien", y=["Patrimoine Net Bien", "Capital Restant"], 
+                     barmode="stack",
+                     color_discrete_map={"Patrimoine Net Bien": "#7030A0", "Capital Restant": "#E1E1E1"})
+        
+        fig.update_traces(name="Patrimoine Net", selector=dict(name="Patrimoine Net Bien"), text=df_plot['% Net'], textposition='inside')
+        fig.update_traces(name="Capital Restant", selector=dict(name="Capital Restant"), text=df_plot['% Dette'], textposition='inside')
+        st.plotly_chart(fig, use_container_width=True)
+
+elif page == "COMPTA":
+    # --- PAGE COMPTA (VIDE POUR L'INSTANT) ---
+    st.title("💰 Comptabilité - RNM IMMO")
+    st.info("Cette section est prête à recevoir tes outils de gestion de trésorerie.")
+    st.write("Ici nous pourrons saisir les loyers, charges et dépenses.")
