@@ -36,7 +36,7 @@ if check_password():
     CONFIG_FILE = "config_biens_v3.csv"
     COMPTA_FILE = "compta_v3.csv"
     RESA_FILE = "reservations.csv"
-    OBJ_FILE = "objectifs_014.csv"
+    OBJ_FILE = "objectifs_014_v2.csv" # Nouvelle version pour gérer les années
 
     def load_config():
         if os.path.exists(CONFIG_FILE):
@@ -66,12 +66,13 @@ if check_password():
     def load_objectifs():
         if os.path.exists(OBJ_FILE):
             return pd.read_csv(OBJ_FILE)
-        return pd.DataFrame({"Mois": ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"], "Objectif": [1250.0]*12})
+        # Par défaut, créer une structure vide
+        return pd.DataFrame(columns=["Année", "Mois", "Objectif"])
 
     df_compta = load_compta()
     df_cfg = load_config()
     df_resa = load_resa()
-    df_obj = load_objectifs()
+    df_obj_all = load_objectifs()
 
     def get_solde(compte_nom):
         if df_compta.empty: return 0.0
@@ -95,27 +96,22 @@ if check_password():
             st.session_state["password_correct"] = False
             st.rerun()
 
-    # --- PAGE RNM IMMO (RÉTABLIE AVEC CALCULS ET %) ---
+    # --- PAGE RNM IMMO ---
     if page == "RNM IMMO":
         st.title("🏛️ RNM IMMO - Tableau de Bord")
         if not df_cfg.empty:
             for c in ["Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
                 df_cfg[c] = pd.to_numeric(df_cfg[c], errors='coerce').fillna(0)
-            
             total_brut = df_cfg["Valeur Actuelle"].sum()
-            
             def calc_crd(row):
                 try:
-                    P = float(row["Montant Crédit"])
-                    r = (float(row["Taux (%)"]) / 100) / 12
-                    n = int(row["Durée (mois)"])
+                    P, r, n = float(row["Montant Crédit"]), (float(row["Taux (%)"])/100)/12, int(row["Durée (mois)"])
                     diff = relativedelta(date.today(), row["Date Début"])
                     m = diff.years * 12 + diff.months
                     if m <= 0: return P
                     if m >= n: return 0
                     return P * ((1 + r)**n - (1 + r)**m) / ((1 + r)**n - 1)
                 except: return 0
-            
             df_cfg["Capital Restant"] = df_cfg.apply(calc_crd, axis=1)
             total_crd = df_cfg["Capital Restant"].sum()
             total_net = (total_brut + total_treso_dynamique) - total_crd
@@ -123,24 +119,19 @@ if check_password():
             df_cfg["% Net"] = (df_cfg["Patrimoine Net Bien"] / df_cfg["Valeur Actuelle"] * 100).fillna(0)
             df_cfg["% Dette"] = (df_cfg["Capital Restant"] / df_cfg["Valeur Actuelle"] * 100).fillna(0)
         else: total_brut = total_crd = total_net = 0
-
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Patrimoine Brut", f"{total_brut:,.0f} €")
         m2.metric("Dette Bancaire", f"{total_crd:,.0f} €")
         m3.metric("Cash disponible", f"{total_treso_dynamique:,.2f} €")
         m4.metric("Patrimoine Net", f"{total_net:,.0f} €")
-        
         st.divider()
-        st.subheader("⚙️ Configuration des Biens")
         edited_df = st.data_editor(df_cfg, num_rows="dynamic", use_container_width=True)
         if st.button("💾 Sauvegarder Biens"):
             cols_save = [c for c in edited_df.columns if c not in ["Capital Restant", "Patrimoine Net Bien", "% Net", "% Dette"]]
             edited_df[cols_save].to_csv(CONFIG_FILE, index=False)
             st.rerun()
-
         if not df_cfg.empty:
             st.divider()
-            st.subheader("📊 Détail par Bien")
             fig = px.bar(df_cfg, x="Bien", y=["Patrimoine Net Bien", "Capital Restant"], barmode="stack", color_discrete_map={"Patrimoine Net Bien": "#7030A0", "Capital Restant": "#E1E1E1"})
             for i, row in df_cfg.iterrows():
                 fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net Bien']/2, text=f"<b>{row['Patrimoine Net Bien']:,.0f}€</b><br>{row['% Net']:.1f}%", showarrow=False, font=dict(color="white"))
@@ -148,7 +139,7 @@ if check_password():
                     fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net Bien'] + (row['Capital Restant']/2), text=f"<b>{row['Capital Restant']:,.0f}€</b><br>{row['% Dette']:.1f}%", showarrow=False)
             st.plotly_chart(fig, use_container_width=True)
 
-    # --- PAGE COMPTA (RÉTABLIE AVEC ANALYSE FINANCIÈRE) ---
+    # --- PAGE COMPTA ---
     elif page == "COMPTA":
         st.title("💰 Comptabilité - RNM IMMO")
         c1, c2, c3 = st.columns(3)
@@ -162,14 +153,11 @@ if check_password():
             df_calc['Date'] = pd.to_datetime(df_calc['Date'])
             df_calc['Année'] = df_calc['Date'].dt.strftime('%Y')
             df_calc['Mois'] = df_calc['Date'].dt.strftime('%m/%Y')
-            
             recap_y = df_calc.groupby(['Année', 'Type'])['Montant'].sum().unstack(fill_value=0)
             recap_m = df_calc.groupby(['Mois', 'Type', 'Année'])['Montant'].sum().unstack(level=1, fill_value=0)
-            
             for col in ["Revenu", "Dépense", "Crédit"]:
                 if col not in recap_y.columns: recap_y[col] = 0.0
                 if col not in recap_m.columns: recap_m[col] = 0.0
-            
             final_rows = []
             for a in sorted(df_calc['Année'].unique(), reverse=True):
                 val_y = recap_y.loc[a]
@@ -200,7 +188,7 @@ if check_password():
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
 
-    # --- PAGE RÉSERVATIONS (ORIGINALE) ---
+    # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
         st.title("📅 Gestion des Réservations")
         df_resa["Code Résidence"] = df_resa["Code Résidence"].fillna("").astype(str)
@@ -227,21 +215,38 @@ if check_password():
                 evts.append({"title": f"[{apt}] {r['Prénom_Nom']}", "start": str(r["Date Arrivée"]), "end": str(r["Date Départ"]), "color": color, "allDay": True})
         calendar(events=evts, options={"initialView": "dayGridMonth", "locale": "fr"})
 
-    # --- PAGE DÉTAIL 014 (SANS COLONNE JOUR ET AVEC OBJECTIFS) ---
+    # --- PAGE DÉTAIL 014 (AVEC OBJECTIFS PAR ANNÉE) ---
     elif page == "Détail 014":
         st.title("🏠 Détail Local 014")
         
-        with st.expander("🎯 Configurer les Objectifs du 014"):
-            edited_obj = st.data_editor(df_obj, use_container_width=True, hide_index=True,
-                column_config={"Objectif": st.column_config.NumberColumn("Objectif (€)", format="%.2f €")})
+        sel_year = st.sidebar.selectbox("Année", [2025, 2026, 2027], index=1)
+        sel_month = st.sidebar.selectbox("Mois", list(range(1, 13)), index=date.today().month - 1)
+        
+        # Gestion des objectifs pour l'année sélectionnée
+        mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
+        
+        # Filtrer/Préparer les objectifs pour l'année en cours
+        df_obj_year = df_obj_all[df_obj_all["Année"] == sel_year].copy()
+        if df_obj_year.empty:
+            df_obj_year = pd.DataFrame({"Année": [sel_year]*12, "Mois": mois_noms, "Objectif": [1250.0]*12})
+        
+        with st.expander(f"🎯 Configurer les Objectifs du 014 pour l'année {sel_year}"):
+            st.info("Ces objectifs sont spécifiques à l'année sélectionnée dans la barre latérale.")
+            edited_obj = st.data_editor(df_obj_year, use_container_width=True, hide_index=True,
+                column_config={
+                    "Année": st.column_config.NumberColumn(disabled=True),
+                    "Mois": st.column_config.TextColumn(disabled=True),
+                    "Objectif": st.column_config.NumberColumn("Objectif (€)", format="%.2f €")
+                })
             if st.button("💾 Sauvegarder Objectifs"):
-                edited_obj.to_csv(OBJ_FILE, index=False)
+                # Fusionner avec les autres années pour la sauvegarde
+                df_obj_others = df_obj_all[df_obj_all["Année"] != sel_year]
+                pd.concat([df_obj_others, edited_obj], ignore_index=True).to_csv(OBJ_FILE, index=False)
                 st.rerun()
         
         st.divider()
-        sel_year = st.sidebar.selectbox("Année", [2025, 2026], index=1)
-        sel_month = st.sidebar.selectbox("Mois", list(range(1, 13)), index=date.today().month - 1)
         
+        # Calcul du calendrier du mois
         first_day = date(sel_year, sel_month, 1)
         last_day = (date(sel_year, sel_month % 12 + 1, 1) - timedelta(days=1)) if sel_month < 12 else date(sel_year, 12, 31)
         days_list = [first_day + timedelta(days=i) for i in range((last_day - first_day).days + 1)]
@@ -274,8 +279,8 @@ if check_password():
 
         col_g, col_d = st.columns([1, 4])
         with col_g:
-            st.subheader("Global Année")
-            obj_an = df_obj["Objectif"].sum() 
+            st.subheader(f"Global {sel_year}")
+            obj_an = edited_obj["Objectif"].sum() 
             real_an = sum(float(r["Montant"]) for _, r in resa_014.iterrows() if pd.notnull(r["Date Arrivée"]) and r["Date Arrivée"].year == sel_year)
             st.metric(f"Réalisé {sel_year}", f"{real_an:,.0f} €")
             st.write(f"Cible : {obj_an:,.0f} €")
@@ -297,8 +302,8 @@ if check_password():
                 return [''] * len(row)
             st.table(df_m.style.apply(style_m, axis=1))
             
-            obj_m_val = df_obj.iloc[sel_month-1]["Objectif"]
-            st.info(f"🎯 Objectif {df_obj.iloc[sel_month-1]['Mois']} : **{obj_m_val:,.0f} €** |  Réalisé : **{(real_m/obj_m_val*100 if obj_m_val > 0 else 0):.1f}%**")
+            obj_m_val = edited_obj.iloc[sel_month-1]["Objectif"]
+            st.info(f"🎯 Objectif {edited_obj.iloc[sel_month-1]['Mois']} {sel_year} : **{obj_m_val:,.0f} €** |  Réalisé : **{(real_m/obj_m_val*100 if obj_m_val > 0 else 0):.1f}%**")
 
     elif page == "RO 2026": st.title("📈 RO 2026")
     elif page == "Détail 119": st.title("🏠 Détail 119")
