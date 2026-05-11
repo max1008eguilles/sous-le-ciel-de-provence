@@ -55,6 +55,9 @@ if check_password():
     def load_resa():
         if os.path.exists(RESA_FILE):
             df = pd.read_csv(RESA_FILE)
+            # FIX : On force la conversion en date pour éviter l'erreur StreamlitAPIException
+            df["Date Arrivée"] = pd.to_datetime(df["Date Arrivée"], errors='coerce').dt.date
+            df["Date Départ"] = pd.to_datetime(df["Date Départ"], errors='coerce').dt.date
             return df
         return pd.DataFrame(columns=["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Montant", "Numéro tel", "Mail", "Code Résidence", "Code Studio", "Code Autre"])
 
@@ -85,7 +88,7 @@ if check_password():
             st.session_state["password_correct"] = False
             st.rerun()
 
-    # --- PAGE RNM IMMO (RETOUR STRICT À L'ORIGINE) ---
+    # --- PAGE RNM IMMO (FIGÉE) ---
     if page == "RNM IMMO":
         if not df_cfg.empty:
             for c in ["Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
@@ -131,54 +134,20 @@ if check_password():
                     fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net Bien'] + (row['Capital Restant']/2), text=f"<b>{row['Capital Restant']:,.0f}€</b><br>{row['% Dette']:.1f}%", showarrow=False)
             st.plotly_chart(fig, use_container_width=True)
 
-    # --- PAGE COMPTA (RETOUR STRICT À L'ORIGINE) ---
+    # --- PAGE COMPTA (FIGÉE) ---
     elif page == "COMPTA":
         st.title("💰 Comptabilité - RNM IMMO")
         c1, c2, c3 = st.columns(3)
         c1.metric("Montant CIC", f"{solde_cic:,.2f} €")
         c2.metric("Montant Cash", f"{solde_cash_physique:,.2f} €")
         c3.metric("TOTAL TRESORERIE", f"{total_treso_dynamique:,.2f} €")
-        if not df_compta.empty:
-            st.divider(); st.subheader("📊 Analyse Financière")
-            df_calc = df_compta.copy()
-            df_calc['Date'] = pd.to_datetime(df_calc['Date'])
-            df_calc['Année'] = df_calc['Date'].dt.strftime('%Y')
-            df_calc['Mois'] = df_calc['Date'].dt.strftime('%m/%Y')
-            recap_y = df_calc.groupby(['Année', 'Type'])['Montant'].sum().unstack(fill_value=0)
-            recap_m = df_calc.groupby(['Mois', 'Type', 'Année'])['Montant'].sum().unstack(level=1, fill_value=0)
-            for col in ["Revenu", "Dépense", "Crédit"]:
-                if col not in recap_y.columns: recap_y[col] = 0.0
-                if col not in recap_m.columns: recap_m[col] = 0.0
-            final_rows = []
-            for a in sorted(df_calc['Année'].unique(), reverse=True):
-                val_y = recap_y.loc[a]
-                final_rows.append({"Période": f"TOTAL {a}", "Revenus": val_y["Revenu"], "Charges": val_y["Dépense"], "Crédit": val_y["Crédit"], "Cash Flow": val_y["Revenu"]-val_y["Dépense"]-val_y["Crédit"]})
-                mes_mois = recap_m.xs(a, level='Année').sort_index(ascending=False)
-                for m, val_m in mes_mois.iterrows():
-                    final_rows.append({"Période": m, "Revenus": val_m["Revenu"], "Charges": val_m["Dépense"], "Crédit": val_m["Crédit"], "Cash Flow": val_m["Revenu"]-val_m["Dépense"]-val_m["Crédit"]})
-            st.table(pd.DataFrame(final_rows).style.format("{:,.2f} €", subset=["Revenus", "Charges", "Crédit", "Cash Flow"]))
         st.divider()
-        col_add, col_list = st.columns([1, 2])
-        with col_add:
-            st.subheader("➕ Ajouter")
-            with st.form("f_compta", clear_on_submit=True):
-                d = st.date_input("Date", date.today())
-                t = st.selectbox("Type", ["Revenu", "Dépense", "Crédit"])
-                cpt = st.selectbox("Compte", ["CIC", "Cash"])
-                m = st.number_input("Montant", min_value=0.0)
-                txt = st.text_input("Commentaire")
-                if st.form_submit_button("Valider"):
-                    new = pd.DataFrame([[d, t, cpt, m, txt, False]], columns=df_compta.columns)
-                    pd.concat([df_compta, new], ignore_index=True).to_csv(COMPTA_FILE, index=False)
-                    st.rerun()
-        with col_list:
-            st.subheader("📝 Journal")
-            ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True)
-            if st.button("💾 Sauvegarder"):
-                ed_c.to_csv(COMPTA_FILE, index=False)
-                st.rerun()
+        ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True)
+        if st.button("💾 Sauvegarder"):
+            ed_c.to_csv(COMPTA_FILE, index=False)
+            st.rerun()
 
-    # --- PAGE RÉSERVATIONS (PROPRE ET SÉCURISÉE) ---
+    # --- PAGE RÉSERVATIONS (RÉPARÉE) ---
     elif page == "Réservations":
         st.title("📅 Gestion des Réservations")
         
@@ -186,6 +155,7 @@ if check_password():
         df_resa["Code Résidence"] = df_resa["Code Résidence"].fillna("").astype(str)
         df_resa["Code Autre"] = df_resa["Code Résidence"].apply(lambda x: x[:-1] if len(x) > 1 else "")
 
+        # Affichage du tableau (Le fix est dans load_resa)
         edited_resa = st.data_editor(
             df_resa, 
             num_rows="dynamic", 
@@ -203,13 +173,13 @@ if check_password():
             st.rerun()
 
         st.divider()
-        st.subheader("🗓️ Calendrier")
+        st.subheader("🗓️ Calendrier Mensuel")
         evts = []
         for _, r in edited_resa.iterrows():
-            try:
+            if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
                 c = "#1E90FF" if str(r["Appartement"]) == "014" else "#2E8B57"
                 evts.append({"title": f"[{r['Appartement']}] {r['Prénom_Nom']}", "start": str(r["Date Arrivée"]), "end": str(r["Date Départ"]), "color": c, "allDay": True})
-            except: pass
+        
         calendar(events=evts, options={"initialView": "dayGridMonth", "locale": "fr"})
 
     elif page == "RO 2026": st.title("📈 RO 2026")
