@@ -175,4 +175,15 @@ if check_password():
                     st.rerun()
         with col_list:
             st.subheader("📝 Journal")
-            ed_c = st.
+            ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True, column_config={"Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY")})
+            if st.button("💾 Sauvegarder"):
+                ed_c.to_csv(COMPTA_FILE, index=False)
+                st.rerun()
+
+    # --- NOUVELLES PAGES ---
+    elif page == "RO 2026":
+        st.title("📈 RO 2026")
+    elif page == "Détail 014":
+        st.title("🏠 Détail 014")
+    elif page == "Détail 119":
+        st.title("🏠 Détail 119")
