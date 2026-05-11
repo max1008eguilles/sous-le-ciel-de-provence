@@ -89,7 +89,7 @@ if check_password():
             st.rerun()
 
     if page == "RNM IMMO":
-        # ... (Logique page principale inchangée)
+        # (Partie Dashboard Immo - Inchangée)
         if not df_cfg.empty:
             for c in ["Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
                 df_cfg[c] = pd.to_numeric(df_cfg[c], errors='coerce').fillna(0)
@@ -115,83 +115,3 @@ if check_password():
         m2.metric("Dette Bancaire", f"{total_crd:,.0f} €")
         m3.metric("Cash disponible", f"{total_treso_dynamique:,.2f} €")
         m4.metric("Patrimoine Net", f"{total_net:,.0f} €")
-        st.divider()
-        st.subheader("⚙️ Configuration des Biens")
-        edited_df = st.data_editor(df_cfg, num_rows="dynamic", use_container_width=True)
-        if st.button("💾 Sauvegarder Biens"):
-            edited_df.to_csv(CONFIG_FILE, index=False)
-            st.rerun()
-        if not df_cfg.empty:
-            st.divider()
-            st.subheader("📊 Détail par Bien")
-            fig = px.bar(df_cfg, x="Bien", y=["Patrimoine Net Bien", "Capital Restant"], barmode="stack", color_discrete_map={"Patrimoine Net Bien": "#7030A0", "Capital Restant": "#E1E1E1"})
-            st.plotly_chart(fig, use_container_width=True)
-
-    elif page == "COMPTA":
-        st.title("💰 Comptabilité - RNM IMMO")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Montant CIC", f"{solde_cic:,.2f} €")
-        c2.metric("Montant Cash", f"{solde_cash_physique:,.2f} €")
-        c3.metric("TOTAL TRESORERIE", f"{total_treso_dynamique:,.2f} €")
-        
-        # --- ANALYSE FINANCIÈRE FUSIONNÉE ---
-        if not df_compta.empty:
-            st.divider()
-            st.subheader("📊 Analyse Financière (Période)")
-            
-            df_calc = df_compta.copy()
-            df_calc['Année'] = df_calc['Date'].dt.strftime('%Y')
-            df_calc['Mois'] = df_calc['Date'].dt.strftime('%m/%Y')
-            
-            # 1. Calcul Annuel
-            recap_y = df_calc.groupby(['Année', 'Type'])['Montant'].sum().unstack(fill_value=0)
-            # 2. Calcul Mensuel
-            recap_m = df_calc.groupby(['Mois', 'Type', 'Année'])['Montant'].sum().unstack(level=1, fill_value=0)
-            
-            # Fusionner les index et colonnes manquantes
-            for col in ["Revenu", "Dépense", "Crédit"]:
-                if col not in recap_y.columns: recap_y[col] = 0.0
-                if col not in recap_m.columns: recap_m[col] = 0.0
-
-            # Préparation tableau final
-            final_rows = []
-            annees = sorted(df_calc['Année'].unique(), reverse=True)
-            
-            for a in annees:
-                # Ligne Annuelle (Gras)
-                val_y = recap_y.loc[a]
-                cf_y = val_y["Revenu"] - val_y["Dépense"] - val_y["Crédit"]
-                final_rows.append({"Période": f"TOTAL {a}", "Revenus": val_y["Revenu"], "Charges": val_y["Dépense"], "Crédit": val_y["Crédit"], "Cash Flow": cf_y})
-                
-                # Lignes Mensuelles de cette année
-                mes_mois = recap_m.xs(a, level='Année').sort_index(ascending=False)
-                for m, val_m in mes_mois.iterrows():
-                    cf_m = val_m["Revenu"] - val_m["Dépense"] - val_m["Crédit"]
-                    final_rows.append({"Période": m, "Revenus": val_m["Revenu"], "Charges": val_m["Dépense"], "Crédit": val_m["Crédit"], "Cash Flow": cf_m})
-
-            df_final = pd.DataFrame(final_rows)
-            st.table(df_final.style.format({
-                "Revenus": "{:,.2f} €", "Charges": "{:,.2f} €", "Crédit": "{:,.2f} €", "Cash Flow": "{:,.2f} €"
-            }))
-
-        # --- SAISIE ET JOURNAL ---
-        st.divider()
-        col_add, col_list = st.columns([1, 2])
-        with col_add:
-            st.subheader("➕ Ajouter")
-            with st.form("f_compta"):
-                d = st.date_input("Date", date.today())
-                t = st.selectbox("Type", ["Revenu", "Dépense", "Crédit"])
-                cpt = st.selectbox("Compte", ["CIC", "Cash"])
-                m = st.number_input("Montant", min_value=0.0)
-                txt = st.text_input("Commentaire")
-                if st.form_submit_button("Valider"):
-                    new = pd.DataFrame([[pd.to_datetime(d), t, cpt, m, txt, False]], columns=df_compta.columns)
-                    pd.concat([df_compta, new], ignore_index=True).to_csv(COMPTA_FILE, index=False)
-                    st.rerun()
-        with col_list:
-            st.subheader("📝 Journal")
-            ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True)
-            if st.button("💾 Sauvegarder"):
-                ed_c.to_csv(COMPTA_FILE, index=False)
-                st.rerun()
