@@ -83,7 +83,7 @@ if check_password():
             
             total_brut = df_cfg["Valeur Actuelle"].sum()
             
-            # CALCUL DES % ICI
+            # Calcul de la répartition % pour le tableau
             if total_brut > 0:
                 df_cfg["%"] = (df_cfg["Valeur Actuelle"] / total_brut) * 100
             else:
@@ -103,6 +103,10 @@ if check_password():
             total_crd = df_cfg["Capital Restant"].sum()
             total_net = (total_brut + total_treso_dynamique) - total_crd
             df_cfg["Patrimoine Net Bien"] = df_cfg["Valeur Actuelle"] - df_cfg["Capital Restant"]
+            
+            # Calcul des rentabilités pour le graphique
+            df_cfg["Rentabilité Brut (%)"] = ( (df_cfg["Mensualité"] * 12) / (df_cfg["Prix Achat"] + df_cfg["Travaux"] + df_cfg["Frais Notaire"]) ) * 100
+            df_cfg["Rentabilité Net (%)"] = ( ((df_cfg["Mensualité"] * 12) - (df_cfg["Mensualité"] * 12 * 0.3)) / (df_cfg["Prix Achat"] + df_cfg["Travaux"] + df_cfg["Frais Notaire"]) ) * 100
         else:
             total_brut = total_crd = total_net = 0
 
@@ -115,8 +119,6 @@ if check_password():
         
         st.divider()
         st.subheader("⚙️ Configuration des Biens")
-        
-        # On définit l'ordre des colonnes pour être sûr que % apparaisse
         cols_order = ["Bien", "%", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"]
         existing_cols = [c for c in cols_order if c in df_cfg.columns]
         
@@ -131,7 +133,14 @@ if check_password():
         if not df_cfg.empty:
             st.divider()
             st.subheader("📊 Détail par Bien")
-            fig = px.bar(df_cfg, x="Bien", y=["Patrimoine Net Bien", "Capital Restant"], barmode="stack", color_discrete_map={"Patrimoine Net Bien": "#7030A0", "Capital Restant": "#E1E1E1"})
+            # Ajout des informations de % dans le graphique
+            fig = px.bar(df_cfg, x="Bien", y=["Patrimoine Net Bien", "Capital Restant"], 
+                         barmode="stack", 
+                         color_discrete_map={"Patrimoine Net Bien": "#7030A0", "Capital Restant": "#E1E1E1"},
+                         hover_data={
+                             "Rentabilité Brut (%)": ":.2f",
+                             "Rentabilité Net (%)": ":.2f"
+                         })
             st.plotly_chart(fig, use_container_width=True)
 
     # --- PAGE COMPTA ---
