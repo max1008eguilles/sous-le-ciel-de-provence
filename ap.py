@@ -95,4 +95,20 @@ if st.button("💾 Sauvegarder et Recalculer"):
 # --- GRAPHIQUE AVEC % ---
 if not df_cfg.empty:
     st.divider()
-    st.subheader("
+    st.subheader("📊 Détail par Bien (Répartition %)")
+    
+    df_plot = df_cfg.copy()
+    df_plot['val_ref'] = df_plot['Valeur Actuelle'].apply(lambda x: x if x > 0 else 1)
+    
+    df_plot['% Net'] = (df_plot['Patrimoine Net Bien'] / df_plot['val_ref'] * 100).round(1).astype(str) + '%'
+    df_plot['% Dette'] = (df_plot['Capital Restant'] / df_plot['val_ref'] * 100).round(1).astype(str) + '%'
+
+    fig = px.bar(df_plot, x="Bien", y=["Patrimoine Net Bien", "Capital Restant"], 
+                 barmode="stack",
+                 color_discrete_map={"Patrimoine Net Bien": "#7030A0", "Capital Restant": "#E1E1E1"},
+                 text_auto=False)
+    
+    fig.update_traces(name="Patrimoine Net", selector=dict(name="Patrimoine Net Bien"), text=df_plot['% Net'], textposition='inside')
+    fig.update_traces(name="Capital Restant", selector=dict(name="Capital Restant"), text=df_plot['% Dette'], textposition='inside')
+
+    st.plotly_chart(fig, use_container_width=True)
