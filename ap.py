@@ -380,50 +380,76 @@ if check_password():
         
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
         
-        # 1. RÉCUPÉRATION DIRECTE DES CIBLES DEPUIS LES FICHIERS DE SAUVEGARDE
+        # 1. RÉCUPÉRATION DES OBJECTIFS (CIBLES) DEPUIS LES SOURCES DE DÉTAIL
+        # On reproduit la logique que tu as dans tes pages détail (vue sur ta capture 23:50:23)
         try:
-            # On lit les fichiers où sont stockés les objectifs saisis dans les onglets Détail
+            # Charger les fichiers d'objectifs sauvegardés par le bouton "Sauvegarder Objectifs"
             df_obj_014 = pd.read_csv("objectifs_014_v2.csv")
             df_obj_119 = pd.read_csv("objectifs_119_v2.csv")
             
-            # On filtre uniquement sur l'année 2026
-            obj_total_annuel_014 = df_obj_014[df_obj_014["Année"] == 2026]["Objectif"].sum()
-            obj_total_annuel_119 = df_obj_119[df_obj_119["Année"] == 2026]["Objectif"].sum()
+            # Calcul de l'objectif annuel par appart pour 2026
+            obj_an_014 = df_obj_014[df_obj_014["Année"] == 2026]["Objectif"].sum()
+            obj_an_119 = df_obj_119[df_obj_119["Année"] == 2026]["Objectif"].sum()
         except:
-            # Valeurs de sécurité si les fichiers sont absents
-            obj_total_annuel_014 = 0.0
-            obj_total_annuel_119 = 0.0
+            # Fallback si les fichiers n'existent pas encore
+            obj_an_014 = 0.0
+            obj_an_119 = 0.0
 
-        # Calcul de l'objectif global RNM demandé
-        objectif_global_rnm = obj_total_annuel_014 + obj_total_annuel_119
+        # L'OBJECTIF GLOBAL EST LA SOMME DES DEUX
+        objectif_annuel_rnm = obj_an_014 + obj_an_119
 
-        # ... (Le reste de ton code pour le tableau mensuel final_matrix) ...
-        # Assure-toi que pour chaque mois i :
-        # o_014 = df_obj_014[(df_obj_014["Année"] == 2026) & (df_obj_014["Mois"] == mois_nom)]["Objectif"].sum()
-        # o_119 = df_obj_119[(df_obj_119["Année"] == 2026) & (df_obj_119["Mois"] == mois_nom)]["Objectif"].sum()
-        # final_matrix["Objectif (RNM)"][i] = o_014 + o_119
+        # 2. INITIALISATION DE LA MATRICE MENSUELLE
+        categories = [
+            "Nb nuits (Total)", "% occu (Total)", "P moyen (Total)",
+            "--- RNM IMMO ---",
+            "CA (RNM)", "CHARGES (RNM)", "FRAIS MENAGE (RNM)", "CREDIT (RNM)", "Objectif (RNM)", "% Objectif (RNM)", "NET AV IMP (RNM)",
+            "--- EGUILLES 014 ---",
+            "CA (014)", "FRAIS MENAGE (014)", "Objectif (014)", "% Objectif (014)",
+            "--- EGUILLES 119 ---",
+            "CA (119)", "CREDIT (119)", "FRAIS MENAGE (119)", "Objectif (119)", "% Objectif (119)"
+        ]
+        
+        final_matrix = {cat: [0.0] * 12 for cat in categories}
+        for sep in ["--- RNM IMMO ---", "--- EGUILLES 014 ---", "--- EGUILLES 119 ---"]:
+            final_matrix[sep] = [""] * 12
 
-        # --- SYNTHÈSE ANNUELLE BAS DE PAGE ---
+        # Préparation des données réelles
+        df_resa['Date Arrivée'] = pd.to_datetime(df_resa['Date Arrivée'], errors='coerce')
+        df_compta['Date'] = pd.to_datetime(df_compta['Date'], errors='coerce')
+
+        for i, mois_nom in enumerate(mois_noms):
+            m_num = i + 1
+            # Filtrage 2026
+            res_m = df_resa[(df_resa['Date Arrivée'].dt.month == m_num) & (df_resa['Date Arrivée'].dt.year == 2026)]
+            res_014 = res_m[res_m["Appartement"].astype(str).str.contains("14|014")]
+            res_119 = res_m[res_m["Appartement"].astype(str) == "119"]
+            
+            # Objectifs mensuels
+            o_m_014 = df_obj_014[(df_obj_014["Année"] == 2026) & (df_obj_014["Mois"] == mois_nom)]["Objectif"].sum() if 'df_obj_014' in locals() else 0
+            o_m_119 = df_obj_119[(df_obj_119["Année"] == 2026) & (df_obj_119["Mois"] == mois_nom)]["Objectif"].sum() if 'df_obj_119' in locals() else 0
+
+            # Remplissage de la matrice (extraits)
+            final_matrix["CA (RNM)"][i] = res_014["Montant"].sum() + res_119["Montant"].sum()
+            final_matrix["Objectif (RNM)"][i] = o_m_014 + o_m_119
+            final_matrix["Objectif (014)"][i] = o_m_014
+            final_matrix["Objectif (119)"][i] = o_m_119
+            # ... (ajouter ici les calculs de charges/crédits par mois si nécessaire)
+
+        # Affichage du tableau
+        st.table(pd.DataFrame(final_matrix, index=mois_noms).T)
+
+        # 3. SYNTHÈSE ANNUELLE (BAS DE PAGE)
         st.divider()
         st.subheader("🎯 Synthèse Annuelle RNM IMMO")
         
-        t_ca = sum(final_matrix["CA (RNM)"])
+        ca_total_an = sum(final_matrix["CA (RNM)"])
         
         c1, c2, c3, c4 = st.columns(4)
         c5, c6, c7, _ = st.columns(4)
         
-        c1.metric("CA TOTAL", f"{t_ca:,.2f} €")
-        c2.metric("CHARGES", f"{sum(final_matrix['CHARGES (RNM)']):,.2f} €")
-        c3.metric("FRAIS MÉNAGE", f"{sum(final_matrix['FRAIS MENAGE (RNM)']):,.2f} €")
-        c4.metric("CRÉDIT", f"{sum(final_matrix['CREDIT (RNM)']):,.2f} €")
+        c1.metric("CA TOTAL", f"{ca_total_an:,.2f} €")
+        # Utilisation de l'objectif calculé en haut du script
+        c5.metric("OBJECTIF", f"{objectif_annuel_rnm:,.2f} €")
         
-        # ICI : Affichage de la somme réelle des deux apparts
-        c5.metric("OBJECTIF", f"{objectif_global_rnm:,.2f} €") 
-        
-        if objectif_global_rnm > 0:
-            realisation = (t_ca / objectif_global_rnm) * 100
-        else:
-            realisation = 0.0
-            
-        c6.metric("% OBJECTIF", f"{realisation:.1f}%")
-        c7.metric("NET AV IMP", f"{sum(final_matrix['NET AV IMP (RNM)']):,.2f} €")
+        perc_realisation = (ca_total_an / objectif_annuel_rnm * 100) if objectif_annuel_rnm > 0 else 0
+        c6.metric("% OBJECTIF", f"{perc_realisation:.1f}%")
