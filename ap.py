@@ -8,6 +8,9 @@ import requests  # Ajouté pour la liaison avec Make
 from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
 
+
+from streamlit_calendar import calendar
+
 # --- CONFIG DE LA PAGE ---
 st.set_page_config(page_title="RNM IMMO - Expert", layout="wide")
 
