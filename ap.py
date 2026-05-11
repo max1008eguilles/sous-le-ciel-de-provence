@@ -107,12 +107,14 @@ if check_password():
             df_cfg["% Net"] = (df_cfg["Patrimoine Net"] / df_cfg["Valeur Actuelle"] * 100).fillna(0)
             df_cfg["% Dette"] = (df_cfg["Capital Restant"] / df_cfg["Valeur Actuelle"] * 100).fillna(0)
         else: total_brut = total_crd = total_net_patrimoine = 0
+
         st.title("🏛️ RNM IMMO - Tableau de Bord")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Patrimoine Brut", f"{total_brut:,.0f} €")
         m2.metric("Dette Bancaire", f"{total_crd:,.0f} €")
         m3.metric("Cash disponible", f"{total_treso_dynamique:,.2f} €")
         m4.metric("Patrimoine Net", f"{total_net_patrimoine:,.0f} €")
+        
         st.divider()
         st.subheader("⚙️ Configuration des Biens")
         edited_df = st.data_editor(df_cfg, num_rows="dynamic", use_container_width=True)
@@ -120,14 +122,21 @@ if check_password():
             cols_to_save = [c for c in edited_df.columns if c not in ["Capital Restant", "Patrimoine Net", "% Net", "% Dette"]]
             edited_df[cols_to_save].to_csv(CONFIG_FILE, index=False)
             st.rerun()
+
         if not df_cfg.empty:
             st.divider()
             st.subheader("📊 Détail par Bien (Répartition %)")
-            fig = px.bar(df_cfg, x="Bien", y=["Patrimoine Net", "Capital Restant"], barmode="stack", color_discrete_map={"Patrimoine Net": "#7030A0", "Capital Restant": "#E1E1E1"})
+            fig = px.bar(df_cfg, x="Bien", y=["Patrimoine Net", "Capital Restant"], 
+                         barmode="stack", 
+                         color_discrete_map={"Patrimoine Net": "#7030A0", "Capital Restant": "#E1E1E1"})
             for i, row in df_cfg.iterrows():
-                fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net']/2, text=f"<b>{row['Patrimoine Net']:,.0f} €</b><br>{row['% Net']:.1f}%", showarrow=False, font=dict(color="white", size=12))
+                fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net']/2, 
+                                 text=f"<b>{row['Patrimoine Net']:,.0f} €</b><br>{row['% Net']:.1f}%",
+                                 showarrow=False, font=dict(color="white", size=12))
                 if row['Capital Restant'] > 500:
-                    fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net'] + (row['Capital Restant']/2), text=f"<b>{row['Capital Restant']:,.0f} €</b><br>{row['% Dette']:.1f}%", showarrow=False, font=dict(color="#333333", size=12))
+                    fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net'] + (row['Capital Restant']/2), 
+                                     text=f"<b>{row['Capital Restant']:,.0f} €</b><br>{row['% Dette']:.1f}%",
+                                     showarrow=False, font=dict(color="#333333", size=12))
             fig.update_layout(yaxis_title="Valeur (€)", showlegend=True)
             st.plotly_chart(fig, use_container_width=True)
 
@@ -178,13 +187,13 @@ if check_password():
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
 
-    # --- PAGE RÉSERVATIONS AVEC CALENDRIER ---
+    # --- PAGE RÉSERVATIONS (CORRIGÉE) ---
     elif page == "Réservations":
         st.title("📅 Gestion des Réservations")
         
-        # Mise à jour auto du Code Autre
-        if not df_resa.empty:
-            df_resa["Code Autre"] = df_resa["Code Résidence"].astype(str).apply(lambda x: x[:-1] if len(x) > 0 else "")
+        # Sécurité pour éviter le crash TypeError (gestion des NaN)
+        df_resa["Code Résidence"] = df_resa["Code Résidence"].fillna("")
+        df_resa["Code Autre"] = df_resa["Code Résidence"].astype(str).apply(lambda x: x[:-1] if len(x) > 0 else "")
 
         edited_resa = st.data_editor(
             df_resa, 
@@ -206,13 +215,12 @@ if check_password():
         st.divider()
         st.subheader("🗓️ Calendrier des Occupations")
         
-        # Préparation des événements pour le calendrier
-        calendar_events = []
-        for i, row in edited_resa.iterrows():
+        events = []
+        for _, row in edited_resa.iterrows():
             try:
-                # Couleur selon l'appartement
-                color = "#1E90FF" if str(row["Appartement"]) == "014" else "#2E8B57" # Bleu ou Vert
-                calendar_events.append({
+                # 014 en Bleu (#1E90FF), 119 en Vert (#2E8B57)
+                color = "#1E90FF" if str(row["Appartement"]) == "014" else "#2E8B57"
+                events.append({
                     "title": f"[{row['Appartement']}] {row['Prénom_Nom']}",
                     "start": str(row["Date Arrivée"]),
                     "end": str(row["Date Départ"]),
@@ -221,13 +229,7 @@ if check_password():
                 })
             except: pass
 
-        calendar_options = {
-            "initialView": "dayGridMonth",
-            "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth,listMonth"},
-            "locale": "fr"
-        }
-        
-        calendar(events=calendar_events, options=calendar_options)
+        calendar(events=events, options={"initialView": "dayGridMonth", "locale": "fr"})
 
     elif page == "RO 2026": st.title("📈 RO 2026")
     elif page == "Détail 014": st.title("🏠 Détail 014")
