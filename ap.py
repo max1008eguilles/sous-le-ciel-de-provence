@@ -194,61 +194,76 @@ if check_password():
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
 
-    # --- PAGE RÉSERVATIONS (FORCE REFRESH & TYPE) ---
+    # --- PAGE RÉSERVATIONS (CALENDRIER CLIQUABLE & FIX STABILITÉ) ---
     elif page == "Réservations":
         st.title("📅 Gestion des Réservations")
         
-        # On s'assure que le fichier existe et on lit tout en TEXTE pour éviter les calculs de dates auto
+        # 1. Chargement et conversion forcée en objets 'date' Python
+        # C'est l'étape cruciale pour que le widget DateColumn fonctionne sans beuguer
         if os.path.exists(RESA_FILE):
-            df_resa = pd.read_csv(RESA_FILE, dtype=str)
+            df_resa = pd.read_csv(RESA_FILE)
+            df_resa["Date Arrivée"] = pd.to_datetime(df_resa["Date Arrivée"], errors='coerce').dt.date
+            df_resa["Date Départ"] = pd.to_datetime(df_resa["Date Départ"], errors='coerce').dt.date
         
-        # Nettoyage minimal pour l'affichage
-        df_resa["Code Résidence"] = df_resa["Code Résidence"].fillna("")
+        # Nettoyage des colonnes annexes
+        df_resa["Code Résidence"] = df_resa["Code Résidence"].fillna("").astype(str)
         df_resa["Code Autre"] = df_resa["Code Résidence"].apply(lambda x: x[:-1] if len(x) > 1 else "")
 
-        # IMPORTANT : On utilise un formulaire ou un bouton de sauvegarde qui force le vidage du cache
+        # 2. L'éditeur avec le calendrier cliquable (DateColumn)
+        # On utilise une 'key' pour que Streamlit garde l'état en mémoire
         edited_resa = st.data_editor(
             df_resa, 
             num_rows="dynamic", 
             use_container_width=True,
-            key="editor_resa", # Clé unique pour fixer l'état du widget
+            key="editor_cliquable_v3",
             column_config={
-                "Date Arrivée": st.column_config.TextColumn("Arrivée (AAAA-MM-JJ)", help="Format: 2026-05-10"),
-                "Date Départ": st.column_config.TextColumn("Départ (AAAA-MM-JJ)", help="Format: 2026-05-15"),
+                "Date Arrivée": st.column_config.DateColumn(
+                    "Arrivée", 
+                    format="DD/MM/YYYY", # Format d'affichage fr
+                    required=True
+                ),
+                "Date Départ": st.column_config.DateColumn(
+                    "Départ", 
+                    format="DD/MM/YYYY", 
+                    required=True
+                ),
                 "Appartement": st.column_config.SelectboxColumn("Appartement", options=["014", "119"]),
                 "Montant": st.column_config.NumberColumn("Montant", format="%.2f €"),
+                "Code Autre": st.column_config.TextColumn("Code Autre", disabled=True)
             }
         )
 
-        if st.button("💾 SAUVEGARDER DEFINITIVEMENT"):
-            # Ici on ne fait aucune conversion, on sauve le texte brut tel quel
-            edited_resa.to_csv(RESA_FILE, index=False)
-            st.success("✅ Données verrouillées dans le fichier !")
-            # Le switch de page ne pourra plus remettre "avant" car le fichier est écrasé
+        # 3. Sauvegarde avec formatage texte ISO (AAAA-MM-JJ) pour le CSV
+        if st.button("💾 SAUVEGARDER LES RÉSERVATIONS"):
+            df_final = edited_resa.copy()
+            # On force le format texte standard pour le stockage
+            df_final["Date Arrivée"] = df_final["Date Arrivée"].astype(str)
+            df_final["Date Départ"] = df_final["Date Départ"].astype(str)
+            
+            df_final.to_csv(RESA_FILE, index=False)
+            st.success("✅ Réservations enregistrées avec succès !")
             st.rerun()
 
         st.divider()
-        st.subheader("🗓️ Calendrier de contrôle")
+        st.subheader("🗓️ Calendrier")
         
-        # On ne génère le calendrier que pour les lignes qui ont des dates valides
         evts = []
         for _, r in edited_resa.iterrows():
-            try:
-                d_arr = pd.to_datetime(r["Date Arrivée"]).date()
-                d_dep = pd.to_datetime(r["Date Départ"]).date()
-                apt = str(r["Appartement"])
-                color = "#1E90FF" if "014" in apt else "#2E8B57" if "119" in apt else "#808080"
-                evts.append({
-                    "title": f"[{apt}] {r['Prénom_Nom']}", 
-                    "start": str(d_arr), 
-                    "end": str(d_dep), 
-                    "color": color, 
-                    "allDay": True
-                })
-            except:
-                continue # Ignore les lignes avec des dates mal saisies pour le calendrier
+            if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
+                try:
+                    apt = str(r["Appartement"])
+                    color = "#1E90FF" if "014" in apt else "#2E8B57" if "119" in apt else "#808080"
+                    evts.append({
+                        "title": f"[{apt}] {r['Prénom_Nom']}", 
+                        "start": str(r["Date Arrivée"]), 
+                        "end": str(r["Date Départ"]), 
+                        "color": color, 
+                        "allDay": True
+                    })
+                except: continue
         
         calendar(events=evts, options={"initialView": "dayGridMonth", "locale": "fr"})
+        
     # --- PAGE DÉTAIL 014 (AVEC LIEN RÉSERVATIONS REMPLI) ---
     elif page == "Détail 014":
         st.title("🏠 Détail Local 014")
