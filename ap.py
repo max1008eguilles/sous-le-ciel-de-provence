@@ -381,7 +381,15 @@ if check_password():
         
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
         
-        # Initialisation propre des catégories demandées
+        # 1. Chargement direct et séparé des fichiers d'objectifs pour garantir les chiffres
+        try:
+            df_obj_014 = pd.read_csv("objectifs_014_v2.csv")
+            df_obj_119 = pd.read_csv("objectifs_119_v2.csv") # ou le nom de votre fichier 119
+        except:
+            # Si les fichiers n'existent pas encore, on crée des DataFrames vides
+            df_obj_014 = pd.DataFrame(columns=["Année", "Mois", "Objectif"])
+            df_obj_119 = pd.DataFrame(columns=["Année", "Mois", "Objectif"])
+
         categories = [
             "Nb nuits (Total)", "% occu (Total)", "P moyen (Total)",
             "--- RNM IMMO ---",
@@ -396,72 +404,53 @@ if check_password():
         for sep in ["--- RNM IMMO ---", "--- EGUILLES 014 ---", "--- EGUILLES 119 ---"]:
             final_matrix[sep] = [""] * 12
 
-        # Pré-filtrage des données pour l'année 2026
-        # On s'assure que les dates sont bien lues
         df_resa['Date Arrivée'] = pd.to_datetime(df_resa['Date Arrivée'], errors='coerce')
         df_compta['Date'] = pd.to_datetime(df_compta['Date'], errors='coerce')
-        
-        df_res_2026 = df_resa[df_resa['Date Arrivée'].dt.year == 2026]
-        df_compta_2026 = df_compta[df_compta['Date'].dt.year == 2026]
 
         for i, mois_nom in enumerate(mois_noms):
             m_num = i + 1
             
-            # 1. Données Studio 014
-            res_014 = df_res_2026[(df_res_2026["Appartement"].astype(str).str.contains("14|014")) & (df_res_2026['Date Arrivée'].dt.month == m_num)]
-            ca_014 = res_014["Montant"].sum()
-            men_014 = len(res_014) * 20.0
+            # --- RÉEL ---
+            res_014 = df_resa[(df_resa["Appartement"].astype(str).str.contains("14|014")) & (df_resa['Date Arrivée'].dt.month == m_num) & (df_resa['Date Arrivée'].dt.year == 2026)]
+            res_119 = df_resa[(df_resa["Appartement"].astype(str) == "119") & (df_resa['Date Arrivée'].dt.month == m_num) & (df_resa['Date Arrivée'].dt.year == 2026)]
             
-            # 2. Données Studio 119
-            res_119 = df_res_2026[(df_res_2026["Appartement"].astype(str) == "119") & (df_res_2026['Date Arrivée'].dt.month == m_num)]
-            ca_119 = res_119["Montant"].sum()
-            men_119 = len(res_119) * 20.0
+            ca_014, men_014 = res_014["Montant"].sum(), len(res_014) * 20.0
+            ca_119, men_119 = res_119["Montant"].sum(), len(res_119) * 20.0
 
-            # 3. Objectifs (Cibles)
-            obj_014 = 0.0
-            obj_119 = 0.0
-            if not df_obj_all.empty:
-                obj_014 = df_obj_all[(df_obj_all["Année"] == 2026) & (df_obj_all["Mois"] == mois_nom) & (df_obj_all.get("Bien", "") == "014")]["Objectif"].sum()
-                obj_119 = df_obj_all[(df_obj_all["Année"] == 2026) & (df_obj_all["Mois"] == mois_nom) & (df_obj_all.get("Bien", "") == "119")]["Objectif"].sum()
+            # --- OBJECTIFS (CIBLES) RÉCUPÉRÉS DE CHAQUE FICHIER ---
+            o_014 = df_obj_014[(df_obj_014["Année"] == 2026) & (df_obj_014["Mois"] == mois_nom)]["Objectif"].sum()
+            o_119 = df_obj_119[(df_obj_119["Année"] == 2026) & (df_obj_119["Mois"] == mois_nom)]["Objectif"].sum()
 
-            # 4. Compta (RNM)
-            df_c_m = df_compta_2026[df_compta_2026['Date'].dt.month == m_num]
+            # --- COMPTA ---
+            df_c_m = df_compta[(df_compta['Date'].dt.month == m_num) & (df_compta['Date'].dt.year == 2026)]
             ch_rnm = df_c_m[df_c_m["Type"] == "Dépense"]["Montant"].sum()
             cr_rnm = df_c_m[df_c_m["Type"] == "Crédit"]["Montant"].sum()
-            
-            # Remplissage RNM
-            final_matrix["Nb nuits (Total)"][i] = len(res_014) + len(res_119)
+
+            # --- REMPLISSAGE ---
             final_matrix["CA (RNM)"][i] = ca_014 + ca_119
             final_matrix["CHARGES (RNM)"][i] = ch_rnm
             final_matrix["FRAIS MENAGE (RNM)"][i] = men_014 + men_119
             final_matrix["CREDIT (RNM)"][i] = cr_rnm
-            final_matrix["Objectif (RNM)"][i] = obj_014 + obj_119
+            final_matrix["Objectif (RNM)"][i] = o_014 + o_119
             final_matrix["NET AV IMP (RNM)"][i] = (ca_014 + ca_119) - ch_rnm - (men_014 + men_119) - cr_rnm
             
-            # Remplissage 014
             final_matrix["CA (014)"][i] = ca_014
-            final_matrix["FRAIS MENAGE (014)"][i] = men_014
-            final_matrix["Objectif (014)"][i] = obj_014
+            final_matrix["Objectif (014)"][i] = o_014
             
-            # Remplissage 119
             final_matrix["CA (119)"][i] = ca_119
-            final_matrix["CREDIT (119)"][i] = cr_rnm # Comme vu précédemment
-            final_matrix["FRAIS MENAGE (119)"][i] = men_119
-            final_matrix["Objectif (119)"][i] = obj_119
+            final_matrix["Objectif (119)"][i] = o_119
 
-        # Affichage du tableau complet
         st.table(pd.DataFrame(final_matrix, index=mois_noms).T)
 
-        # SYNTHÈSE EN BAS
+        # --- SYNTHÈSE ANNUELLE ---
         st.divider()
         st.subheader("🎯 Synthèse Annuelle RNM IMMO")
         
-        c1, c2, c3, c4 = st.columns(4)
-        c5, c6, c7, _ = st.columns(4)
-        
-        # On utilise les sommes des listes pour les métriques finales
         t_ca = sum(final_matrix["CA (RNM)"])
         t_obj = sum(final_matrix["Objectif (RNM)"])
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c5, c6, c7, _ = st.columns(4)
         
         c1.metric("CA TOTAL", f"{t_ca:,.2f} €")
         c2.metric("CHARGES", f"{sum(final_matrix['CHARGES (RNM)']):,.2f} €")
