@@ -44,16 +44,23 @@ def calculer_capital_restant(row):
         return 0
 
 # --- CALCULS GENERAUX ---
+# Initialisation du Cash à 0€ (on configurera la source plus tard)
+cash_disponible = 0.0
+
 if not df_cfg.empty:
     for c in ["Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
         df_cfg[c] = pd.to_numeric(df_cfg[c], errors='coerce').fillna(0)
     
     total_brut = df_cfg["Valeur Actuelle"].sum()
     df_cfg["Capital Restant"] = df_cfg.apply(calculer_capital_restant, axis=1)
-    df_cfg["Patrimoine Net"] = df_cfg["Valeur Actuelle"] - df_cfg["Capital Restant"]
     
     total_crd = df_cfg["Capital Restant"].sum()
-    total_net = df_cfg["Patrimoine Net"].sum()
+    
+    # Nouveau calcul du Patrimoine Net incluant le Cash
+    total_net = (total_brut + cash_disponible) - total_crd
+    
+    # Pour le graphique, on garde la répartition par bien
+    df_cfg["Patrimoine Net Bien"] = df_cfg["Valeur Actuelle"] - df_cfg["Capital Restant"]
 else:
     total_brut = total_crd = total_net = 0
 
@@ -61,10 +68,12 @@ else:
 st.title("🏛️ RNM IMMO - Tableau de Bord Financier")
 st.subheader(f"= {len(df_cfg)} Biens immo")
 
-m1, m2, m3 = st.columns(3)
+# Affichage en 4 colonnes pour intégrer le Cash
+m1, m2, m3, m4 = st.columns(4)
 m1.metric("Patrimoine Brut", f"{total_brut:,.0f} €")
 m2.metric("Dette Bancaire", f"{total_crd:,.0f} €", delta=f"-{total_brut-total_crd:,.0f} remboursés", delta_color="normal")
-m3.metric("Patrimoine Net", f"{total_net:,.0f} €")
+m3.metric("Cash disponible", f"{cash_disponible:,.0f} €")
+m4.metric("Patrimoine Net", f"{total_net:,.0f} €")
 
 st.divider()
 
@@ -86,23 +95,4 @@ if st.button("💾 Sauvegarder et Recalculer"):
 # --- GRAPHIQUE AVEC % ---
 if not df_cfg.empty:
     st.divider()
-    st.subheader("📊 Détail par Bien (Répartition %)")
-    
-    df_plot = df_cfg.copy()
-    # On évite la division par zéro
-    df_plot['val_ref'] = df_plot['Valeur Actuelle'].apply(lambda x: x if x > 0 else 1)
-    
-    df_plot['% Net'] = (df_plot['Patrimoine Net'] / df_plot['val_ref'] * 100).round(1).astype(str) + '%'
-    df_plot['% Dette'] = (df_plot['Capital Restant'] / df_plot['val_ref'] * 100).round(1).astype(str) + '%'
-
-    fig = px.bar(df_plot, x="Bien", y=["Patrimoine Net", "Capital Restant"], 
-                 title="Composition du Patrimoine par Bien",
-                 barmode="stack",
-                 color_discrete_map={"Patrimoine Net": "#7030A0", "Capital Restant": "#E1E1E1"},
-                 text_auto=False)
-    
-    # Ajout manuel des étiquettes de pourcentage
-    fig.update_traces(name="Patrimoine Net", selector=dict(name="Patrimoine Net"), text=df_plot['% Net'], textposition='inside')
-    fig.update_traces(name="Capital Restant", selector=dict(name="Capital Restant"), text=df_plot['% Dette'], textposition='inside')
-
-    st.plotly_chart(fig, use_container_width=True)
+    st.subheader("
