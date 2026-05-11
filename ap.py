@@ -380,7 +380,7 @@ if check_password():
         
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
         
-        # Structure des lignes exactement comme sur ton screenshot
+        # Structure exacte des lignes (Clés corrigées)
         categories = [
             "Nb nuits (Total)", "% occu (Total)", "P moyen (Total)",
             "--- RNM IMMO ---",
@@ -391,43 +391,38 @@ if check_password():
             "CA (119)", "CREDIT (119)", "FRAIS MENAGE (119)", "Objectif (119)", "% Objectif (119)"
         ]
         
-        # Initialisation du dictionnaire de données
         final_matrix = {cat: [] for cat in categories}
-        
         df_compta_2026 = df_compta[pd.to_datetime(df_compta['Date']).dt.year == 2026].copy()
 
         for i, mois_nom in enumerate(mois_noms):
             m_num = i + 1
             days_in_month = (date(2026, m_num % 12 + 1, 1) - date(2026, m_num, 1)).days if m_num < 12 else 31
             
-            # --- COLLECTE DONNÉES 014 ---
+            # --- STUDIO 014 ---
             resa_014 = df_resa[(df_resa["Appartement"].isin(["014", "14", 14])) & 
                                (pd.to_datetime(df_resa["Date Arrivée"]).dt.month == m_num) & 
                                (pd.to_datetime(df_resa["Date Arrivée"]).dt.year == 2026)]
             ca_014 = resa_014["Montant"].sum()
             menages_014 = len(resa_014) * 20.0
-            nuits_014 = len(resa_014) # Approximation basée sur le nombre de résas pour le cumul nuits
             
-            # Sécurité colonne 'Bien' pour objectifs
             if "Bien" in df_obj_all.columns:
                 obj_014 = df_obj_all[(df_obj_all["Année"] == 2026) & (df_obj_all["Mois"] == mois_nom) & (df_obj_all["Bien"] == "014")]["Objectif"].sum()
             else:
-                obj_014 = 1250.0 # Valeur par défaut
+                obj_014 = 1250.0
 
-            # --- COLLECTE DONNÉES 119 ---
+            # --- STUDIO 119 ---
             resa_119 = df_resa[(df_resa["Appartement"].isin(["119"])) & 
                                (pd.to_datetime(df_resa["Date Arrivée"]).dt.month == m_num) & 
                                (pd.to_datetime(df_resa["Date Arrivée"]).dt.year == 2026)]
             ca_119 = resa_119["Montant"].sum()
             menages_119 = len(resa_119) * 20.0
-            nuits_119 = len(resa_119)
             
             if "Bien" in df_obj_all.columns:
                 obj_119 = df_obj_all[(df_obj_all["Année"] == 2026) & (df_obj_all["Mois"] == mois_nom) & (df_obj_all["Bien"] == "119")]["Objectif"].sum()
             else:
                 obj_119 = 1250.0
 
-            # --- COMPTA ET TOTAUX ---
+            # --- COMPTA & TOTAUX ---
             df_c_m = df_compta_2026[pd.to_datetime(df_compta_2026['Date']).dt.month == m_num]
             ch_rnm = df_c_m[df_c_m["Type"] == "Dépense"]["Montant"].sum()
             cr_rnm = df_c_m[df_c_m["Type"] == "Crédit"]["Montant"].sum()
@@ -435,44 +430,42 @@ if check_password():
             total_ca = ca_014 + ca_119
             total_menages = menages_014 + menages_119
             total_obj = obj_014 + obj_119
-            total_nuits = nuits_014 + nuits_119
+            total_nuits = len(resa_014) + len(resa_119) # Nb de réservations comme indicateur de nuits occupées
             
-            # Remplissage de la colonne mois
+            # Remplissage avec les clés exactes
             final_matrix["Nb nuits (Total)"].append(total_nuits)
             final_matrix["% occu (Total)"].append(f"{(total_nuits/(days_in_month*2)*100):.1f}%")
             final_matrix["P moyen (Total)"].append(f"{(total_ca/total_nuits if total_nuits > 0 else 0):.2f} €")
-            
             final_matrix["--- RNM IMMO ---"].append("")
-            final_matrix["CA (RN)M"].append(total_ca)
+            final_matrix["CA (RNM)"].append(total_ca)
             final_matrix["CHARGES (RNM)"].append(ch_rnm)
             final_matrix["FRAIS MENAGE (RNM)"].append(total_menages)
             final_matrix["CREDIT (RNM)"].append(cr_rnm)
             final_matrix["Objectif (RNM)"].append(total_obj)
             final_matrix["% Objectif (RNM)"].append(f"{(total_ca/total_obj*100 if total_obj > 0 else 0):.1f}%")
             final_matrix["NET AV IMP (RNM)"].append(total_ca - ch_rnm - total_menages - cr_rnm)
-            
             final_matrix["--- EGUILLES 014 ---"].append("")
             final_matrix["CA (014)"].append(ca_014)
             final_matrix["FRAIS MENAGE (014)"].append(menages_014)
             final_matrix["Objectif (014)"].append(obj_014)
             final_matrix["% Objectif (014)"].append(f"{(ca_014/obj_014*100 if obj_014 > 0 else 0):.1f}%")
-            
             final_matrix["--- EGUILLES 119 ---"].append("")
             final_matrix["CA (119)"].append(ca_119)
-            final_matrix["CREDIT (119)"].append(cr_rnm) # Crédit rattaché
+            final_matrix["CREDIT (119)"].append(cr_rnm)
             final_matrix["FRAIS MENAGE (119)"].append(menages_119)
             final_matrix["Objectif (119)"].append(obj_119)
             final_matrix["% Objectif (119)"].append(f"{(ca_119/obj_119*100 if obj_119 > 0 else 0):.1f}%")
 
-        # Création du DataFrame final avec les mois en colonnes
+        # Affichage du DataFrame transposé (Mois en colonnes)
         df_ro_final = pd.DataFrame(final_matrix, index=mois_noms).T
-        
-        # Affichage
         st.subheader("📊 Tableau de Bord Annuel 2026")
         st.dataframe(df_ro_final, use_container_width=True)
 
-        # Graphique Net Mensuel
+        # Métriques de résumé en haut de page (optionnel)
         st.divider()
-        st.subheader("📈 Évolution Cash Flow (NET AV IMP)")
-        net_values = [v for v in final_matrix["NET AV IMP (RNM)"]]
-        st.area_chart(pd.Series(net_values, index=mois_noms))
+        c1, c2, c3 = st.columns(3)
+        total_ca_an = sum(final_matrix["CA (RNM)"])
+        total_net_an = sum(final_matrix["NET AV IMP (RNM)"])
+        c1.metric("CA Cumulé 2026", f"{total_ca_an:,.2f} €")
+        c2.metric("Net Cumulé 2026", f"{total_net_an:,.2f} €")
+        c3.metric("Moyenne Mensuelle Net", f"{(total_net_an/12):,.2f} €")
