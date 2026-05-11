@@ -7,7 +7,15 @@ import plotly.express as px
 import requests  # Ajouté pour la liaison avec Make
 from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
-import pytz  # Pour gérer l'heure de Paris
+# --- SECTION 1 : ENVOI RAPIDE (ARRIVÉES DU JOUR) ---
+st.subheader("🚀 Arrivées du jour")
+
+# On calcule l'heure de Paris sans bibliothèque externe
+# datetime.utcnow() donne l'heure de Londres, on ajoute 2h pour Paris (été)
+from datetime import timedelta
+aujourdhui = (datetime.utcnow() + timedelta(hours=2)).strftime("%Y-%m-%d")
+
+st.write(f"Vérification des arrivées pour : **{aujourdhui}**")
 from streamlit_calendar import calendar
 
 # --- CONFIG DE LA PAGE ---
