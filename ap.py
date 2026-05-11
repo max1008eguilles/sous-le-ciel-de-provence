@@ -33,7 +33,11 @@ def check_password():
         st.text_input("Identifiant (Robin, Nathan ou Maxence)", key="username")
         st.text_input("Mot de passe", type="password", key="password")
         st.button("Se connecter", on_click=password_entered)
-        st.error("🚫 Identifiant ou mot de passe incorrect.")
+        # Ajout d'une sécurité : si Secrets n'est pas configuré
+        if "passwords" not in st.secrets:
+            st.warning("⚠️ Attention : La section [passwords] est absente des Secrets Streamlit.")
+        else:
+            st.error("🚫 Identifiant ou mot de passe incorrect.")
         return False
     else:
         return True
@@ -71,7 +75,7 @@ if check_password():
         df_c = df_compta[df_compta["Compte"] == compte_nom]
         rev = df_c[df_c["Type"] == "Revenu"]["Montant"].sum()
         dep = df_c[df_c["Type"] == "Dépense"]["Montant"].sum()
-        cre = df_c[df_c["Type"] == "Crédit"]["Montant"].sum() # Prise en compte du type Crédit
+        cre = df_c[df_c["Type"] == "Crédit"]["Montant"].sum()
         return float(rev - dep - cre)
 
     solde_cic = get_solde("CIC")
@@ -138,34 +142,14 @@ if check_password():
     # --- PAGE COMPTA ---
     elif page == "COMPTA":
         st.title("💰 Comptabilité - RNM IMMO")
+        
+        # 1. EN-TÊTE : SOLDES ACTUELS
         c1, c2, c3 = st.columns(3)
         c1.metric("Montant CIC", f"{solde_cic:,.2f} €")
         c2.metric("Montant Cash", f"{solde_cash_physique:,.2f} €")
         c3.metric("TOTAL TRESORERIE", f"{total_treso_dynamique:,.2f} €")
         
-        st.divider()
-        col_add, col_list = st.columns([1, 2])
-        with col_add:
-            st.subheader("➕ Ajouter")
-            with st.form("f_compta"):
-                d = st.date_input("Date", date.today())
-                t = st.selectbox("Type", ["Revenu", "Dépense", "Crédit"])
-                cpt = st.selectbox("Compte", ["CIC", "Cash"])
-                m = st.number_input("Montant", min_value=0.0)
-                txt = st.text_input("Commentaire")
-                if st.form_submit_button("Valider"):
-                    new = pd.DataFrame([[pd.to_datetime(d), t, cpt, m, txt, False]], columns=df_compta.columns)
-                    pd.concat([df_compta, new], ignore_index=True).to_csv(COMPTA_FILE, index=False)
-                    st.rerun()
-        
-        with col_list:
-            st.subheader("📝 Journal")
-            ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True)
-            if st.button("💾 Sauvegarder Compta"):
-                ed_c.to_csv(COMPTA_FILE, index=False)
-                st.rerun()
-
-        # --- SECTION RÉCAP MOIS ET ANNÉE ---
+        # 2. ANALYSE FINANCIÈRE (Désormais au-dessus)
         if not df_compta.empty:
             st.divider()
             col_m, col_y = st.columns(2)
@@ -191,5 +175,26 @@ if check_password():
                 recap_y = recap_y.rename(columns={"Revenu": "Total Revenus", "Dépense": "Total Charges", "Crédit": "Total Crédit"})
                 recap_y["Cash Flow Annuel"] = recap_y["Total Revenus"] - recap_y["Total Charges"] - recap_y["Total Crédit"]
                 st.table(recap_y.sort_index(ascending=False).style.format("{:,.2f} €"))
-        else:
-            st.info("Ajoutez des données pour voir les analyses.")
+        
+        # 3. SAISIE ET JOURNAL (Désormais en dessous)
+        st.divider()
+        col_add, col_list = st.columns([1, 2])
+        with col_add:
+            st.subheader("➕ Ajouter une ligne")
+            with st.form("f_compta"):
+                d = st.date_input("Date", date.today())
+                t = st.selectbox("Type", ["Revenu", "Dépense", "Crédit"])
+                cpt = st.selectbox("Compte", ["CIC", "Cash"])
+                m = st.number_input("Montant", min_value=0.0)
+                txt = st.text_input("Commentaire")
+                if st.form_submit_button("Valider l'entrée"):
+                    new = pd.DataFrame([[pd.to_datetime(d), t, cpt, m, txt, False]], columns=df_compta.columns)
+                    pd.concat([df_compta, new], ignore_index=True).to_csv(COMPTA_FILE, index=False)
+                    st.rerun()
+        
+        with col_list:
+            st.subheader("📝 Journal des Transactions")
+            ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True)
+            if st.button("💾 Sauvegarder les modifications du journal"):
+                ed_c.to_csv(COMPTA_FILE, index=False)
+                st.rerun()
