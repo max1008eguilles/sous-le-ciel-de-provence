@@ -246,7 +246,7 @@ if check_password():
 
     # --- PAGE DÉTAIL 014 ---
     elif page == "Détail 014":
-        st.title("🏠 Détail Local 014")
+        st.title("🏠 Détail Studio 014")
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
         df_obj_year = df_obj_all[df_obj_all["Année"] == sel_year].copy()
         if df_obj_year.empty:
@@ -311,7 +311,7 @@ if check_password():
 
     # --- PAGE DÉTAIL 119 ---
     elif page == "Détail 119":
-        st.title("🏠 Détail Local 119")
+        st.title("🏠 Détail Studio 119")
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
         df_obj_year = df_obj_all[df_obj_all["Année"] == sel_year].copy()
         if df_obj_year.empty:
