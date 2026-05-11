@@ -9,106 +9,133 @@ from dateutil.relativedelta import relativedelta
 # --- CONFIG ---
 st.set_page_config(page_title="RNM IMMO - Expert", layout="wide")
 CONFIG_FILE = "config_biens_v3.csv"
+COMPTA_FILE = "compta_v3.csv"
 
-# --- BARRE LATÉRALE (MENU) ---
-with st.sidebar:
-    st.title("📂 Navigation")
-    # Le menu demandé
-    page = st.radio("Aller vers :", ["RNM IMMO", "COMPTA"])
-    st.divider()
-    st.info("RNM IMMO : Tableau de bord financier complet.\n\nCOMPTA : Gestion des flux (à venir).")
-
-# --- FONCTIONS DE CHARGEMENT ET CALCULS (Inchangées) ---
-def load_data():
+# --- CHARGEMENT DES DONNÉES ---
+def load_config():
     cols = ["Bien", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", 
             "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"]
     if os.path.exists(CONFIG_FILE):
         df = pd.read_csv(CONFIG_FILE)
-        if "Valeur Actuelle" not in df.columns:
-            df["Valeur Actuelle"] = 0
         df["Date Début"] = pd.to_datetime(df["Date Début"]).dt.date
         return df
     return pd.DataFrame(columns=cols)
 
-def calculer_capital_restant(row):
-    try:
-        P = float(row["Montant Crédit"])
-        if P <= 0: return 0
-        r = (float(row["Taux (%)"]) / 100) / 12
-        n = int(row["Durée (mois)"])
-        date_debut = row["Date Début"]
-        if not isinstance(date_debut, (date, datetime)):
-            return P
-        date_actuelle = date.today()
-        diff = relativedelta(date_actuelle, date_debut)
-        m_payees = diff.years * 12 + diff.months
-        if m_payees <= 0: return P
-        if m_payees >= n: return 0
-        crd = P * ((1 + r)**n - (1 + r)**m_payees) / ((1 + r)**n - 1)
-        return max(0, crd)
-    except:
-        return 0
+def load_compta():
+    cols = ["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"]
+    if os.path.exists(COMPTA_FILE):
+        df = pd.read_csv(COMPTA_FILE)
+        df["Date"] = pd.to_datetime(df["Date"]).dt.date
+        return df
+    return pd.DataFrame(columns=cols)
 
-# --- AFFICHAGE SELON LA PAGE SÉLECTIONNÉE ---
+# --- CALCULS ---
+df_compta = load_compta()
 
+def get_solde(compte_nom):
+    if df_compta.empty: return 0.0
+    df_c = df_compta[df_compta["Compte"] == compte_nom]
+    revenus = df_c[df_c["Type"] == "Revenu"]["Montant"].sum()
+    depenses = df_c[df_c["Type"] == "Dépense"]["Montant"].sum()
+    return float(revenus - depenses)
+
+solde_cic = get_solde("CIC")
+solde_cash = get_solde("Cash")
+total_treso = solde_cic + solde_cash
+
+# --- BARRE LATÉRALE (MENU) ---
+with st.sidebar:
+    st.title("📂 Navigation")
+    page = st.radio("Aller vers :", ["RNM IMMO", "COMPTA"])
+    st.divider()
+    st.metric("Total Trésorerie", f"{total_treso:,.2f} €")
+
+# --- PAGE RNM IMMO (Dashboard Initial) ---
 if page == "RNM IMMO":
-    # --- TA PAGE PRINCIPALE (CONTENU INITIAL FIGÉ) ---
-    df_cfg = load_data()
-    cash_disponible = 0.0
+    df_cfg = load_config()
+    # Le Cash disponible est maintenant dynamique !
+    cash_total_pour_dashboard = total_treso 
 
     if not df_cfg.empty:
         for c in ["Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
             df_cfg[c] = pd.to_numeric(df_cfg[c], errors='coerce').fillna(0)
         
+        # Fonctions calcul CRD (identique à avant)
+        def calc_crd(row):
+            try:
+                P, r, n = float(row["Montant Crédit"]), (float(row["Taux (%)"])/100)/12, int(row["Durée (mois)"])
+                diff = relativedelta(date.today(), row["Date Début"])
+                m = diff.years * 12 + diff.months
+                if m <= 0: return P
+                if m >= n: return 0
+                return P * ((1 + r)**n - (1 + r)**m) / ((1 + r)**n - 1)
+            except: return 0
+
         total_brut = df_cfg["Valeur Actuelle"].sum()
-        df_cfg["Capital Restant"] = df_cfg.apply(calculer_capital_restant, axis=1)
+        df_cfg["Capital Restant"] = df_cfg.apply(calc_crd, axis=1)
         total_crd = df_cfg["Capital Restant"].sum()
-        total_net = (total_brut + cash_disponible) - total_crd
+        total_net = (total_brut + cash_total_pour_dashboard) - total_crd
         df_cfg["Patrimoine Net Bien"] = df_cfg["Valeur Actuelle"] - df_cfg["Capital Restant"]
     else:
         total_brut = total_crd = total_net = 0
 
     st.title("🏛️ RNM IMMO - Tableau de Bord Financier")
-    st.subheader(f"= {len(df_cfg)} Biens immo")
-
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Patrimoine Brut", f"{total_brut:,.0f} €")
-    m2.metric("Dette Bancaire", f"{total_crd:,.0f} €", delta=f"-{total_brut-total_crd:,.0f} remboursés", delta_color="normal")
-    m3.metric("Cash disponible", f"{cash_disponible:,.0f} €")
+    m2.metric("Dette Bancaire", f"{total_crd:,.0f} €")
+    m3.metric("Cash disponible", f"{cash_total_pour_dashboard:,.2f} €")
     m4.metric("Patrimoine Net", f"{total_net:,.0f} €")
 
     st.divider()
     st.subheader("⚙️ Configuration Précise des Biens")
-    edited_df = st.data_editor(
-        df_cfg[["Bien", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"]],
-        num_rows="dynamic",
-        use_container_width=True,
-        column_config={"Date Début": st.column_config.DateColumn("Date Début", format="DD/MM/YYYY")}
-    )
-
-    if st.button("💾 Sauvegarder et Recalculer"):
+    edited_df = st.data_editor(df_cfg[["Bien", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"]], num_rows="dynamic", use_container_width=True, column_config={"Date Début": st.column_config.DateColumn("Date Début", format="DD/MM/YYYY")})
+    if st.button("💾 Sauvegarder Biens"):
         edited_df.to_csv(CONFIG_FILE, index=False)
-        st.success("Données enregistrées !")
         st.rerun()
 
-    if not df_cfg.empty:
-        st.divider()
-        st.subheader("📊 Détail par Bien (Répartition %)")
-        df_plot = df_cfg.copy()
-        df_plot['val_ref'] = df_plot['Valeur Actuelle'].apply(lambda x: x if x > 0 else 1)
-        df_plot['% Net'] = (df_plot['Patrimoine Net Bien'] / df_plot['val_ref'] * 100).round(1).astype(str) + '%'
-        df_plot['% Dette'] = (df_plot['Capital Restant'] / df_plot['val_ref'] * 100).round(1).astype(str) + '%'
-
-        fig = px.bar(df_plot, x="Bien", y=["Patrimoine Net Bien", "Capital Restant"], 
-                     barmode="stack",
-                     color_discrete_map={"Patrimoine Net Bien": "#7030A0", "Capital Restant": "#E1E1E1"})
-        
-        fig.update_traces(name="Patrimoine Net", selector=dict(name="Patrimoine Net Bien"), text=df_plot['% Net'], textposition='inside')
-        fig.update_traces(name="Capital Restant", selector=dict(name="Capital Restant"), text=df_plot['% Dette'], textposition='inside')
-        st.plotly_chart(fig, use_container_width=True)
-
+# --- PAGE COMPTA (Nouvelle Section) ---
 elif page == "COMPTA":
-    # --- PAGE COMPTA (VIDE POUR L'INSTANT) ---
     st.title("💰 Comptabilité - RNM IMMO")
-    st.info("Cette section est prête à recevoir tes outils de gestion de trésorerie.")
-    st.write("Ici nous pourrons saisir les loyers, charges et dépenses.")
+    
+    # Affichage des soldes demandés
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Montant CIC", f"{solde_cic:,.2f} €")
+    c2.metric("Montant Cash", f"{solde_cash:,.2f} €")
+    c3.metric("TOTAL TRESORERIE", f"{total_treso:,.2f} €")
+
+    st.divider()
+    
+    col_add, col_list = st.columns([1, 3])
+    
+    with col_add:
+        st.subheader("➕ Nouvelle Transaction")
+        with st.form("form_compta"):
+            d = st.date_input("Date", date.today())
+            t = st.selectbox("Type", ["Revenu", "Dépense"])
+            cpt = st.selectbox("Compte", ["CIC", "Cash"])
+            m = st.number_input("Montant", min_value=0.0)
+            txt = st.text_input("Commentaire")
+            check = st.checkbox("Justificatif déposé ?")
+            if st.form_submit_button("Ajouter la transaction"):
+                new_row = pd.DataFrame([[d, t, cpt, m, txt, check]], columns=df_compta.columns)
+                pd.concat([df_compta, new_row], ignore_index=True).to_csv(COMPTA_FILE, index=False)
+                st.rerun()
+
+    with col_list:
+        st.subheader("📝 Journal des Transactions")
+        st.caption("Double-clique pour modifier. Sélectionne une ligne et appuie sur 'Suppr' pour effacer.")
+        # Tableau éditable avec case à cocher pour justificatif
+        edited_compta = st.data_editor(
+            df_compta,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"),
+                "Type": st.column_config.SelectboxColumn("Type", options=["Revenu", "Dépense"]),
+                "Compte": st.column_config.SelectboxColumn("Compte", options=["CIC", "Cash"]),
+                "Justificatif": st.column_config.CheckboxColumn("Justificatif")
+            }
+        )
+        if st.button("💾 Enregistrer modifications Compta"):
+            edited_compta.to_csv(COMPTA_FILE, index=False)
+            st.rerun()
