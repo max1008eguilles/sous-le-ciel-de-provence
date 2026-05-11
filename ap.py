@@ -192,30 +192,67 @@ if check_password():
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
 
-    # --- PAGE RÉSERVATIONS ---
+   # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
         st.title("📅 Gestion des Réservations")
         if os.path.exists(RESA_FILE):
             df_resa = pd.read_csv(RESA_FILE, dtype=str)
+        
+        # S'assurer que la colonne d'envoi existe (décochée par défaut)
+        if "Envoyer Guide" not in df_resa.columns:
+            df_resa["Envoyer Guide"] = False
+        else:
+            df_resa["Envoyer Guide"] = df_resa["Envoyer Guide"].map({'True': True, 'False': False, True: True, False: False})
+
         for col in ["Date Arrivée", "Date Départ", "Appartement"]:
             if col not in df_resa.columns:
                 df_resa[col] = ""
-        
+
         edited_resa = st.data_editor(
             df_resa, 
             num_rows="dynamic", 
             use_container_width=True,
-            key="editor_final_v4",
+            key="editor_final_v5",
             column_config={
-                "Date Arrivée": st.column_config.TextColumn("Arrivée (AAAA-MM-JJ)", help="Ex: 2026-05-10"),
-                "Date Départ": st.column_config.TextColumn("Départ (AAAA-MM-JJ)", help="Ex: 2026-05-15"),
+                "Date Arrivée": st.column_config.TextColumn("Arrivée (AAAA-MM-JJ)"),
+                "Date Départ": st.column_config.TextColumn("Départ (AAAA-MM-JJ)"),
                 "Appartement": st.column_config.SelectboxColumn("Appartement", options=["014", "119"]),
                 "Montant": st.column_config.NumberColumn("Montant", format="%.2f €"),
+                "Envoyer Guide": st.column_config.CheckboxColumn("Envoyer Guide", help="Cochez puis sauvegardez pour envoyer"),
             }
         )
-        
-        if st.button("💾 SAUVEGARDER DÉFINITIVEMENT"):
+
+        if st.button("💾 SAUVEGARDER & TRAITER LES ENVOIS"):
             df_to_save = edited_resa.copy()
+            
+            # --- TRAITEMENT DES ENVOIS (Détection des cases cochées) ---
+            for index, row in df_to_save.iterrows():
+                if row["Envoyer Guide"] == True:
+                    appart = str(row['Appartement'])
+                    # Envoi uniquement pour le 014 (selon ton souhait)
+                    if "14" in appart or "014" in appart:
+                        webhook_014 = "https://hook.eu2.make.com/7v3yap243qgcxbu8pc539owwgrvr32qt"
+                        payload = {
+                            "Nom": str(row['Prénom_Nom']),
+                            "Date_arrivée": str(row['Date Arrivée']),
+                            "Date_départ": str(row['Date Départ']),
+                            "Code_studio": str(row.get('Code Studio', '')),
+                            "Code_résidence": str(row.get('Code Résidence', '')),
+                            "Mail": str(row.get('Mail', ''))
+                        }
+                        try:
+                            r = requests.post(webhook_014, json=payload)
+                            if r.status_code == 200:
+                                st.success(f"🚀 Guide 014 envoyé avec succès pour {row['Prénom_Nom']} !")
+                            else:
+                                st.error(f"❌ Erreur Make pour {row['Prénom_Nom']}")
+                        except Exception as e:
+                            st.error(f"❌ Erreur : {e}")
+                    
+                    # On décoche la case après l'envoi pour ne pas renvoyer en boucle
+                    df_to_save.at[index, "Envoyer Guide"] = False
+
+            # Nettoyage des dates 2025/2026
             def fix_year(row):
                 try:
                     arr = str(row["Date Arrivée"])
@@ -224,75 +261,29 @@ if check_password():
                         return dep.replace("2025", "2026")
                     return dep
                 except: return row["Date Départ"]
+            
             df_to_save["Date Départ"] = df_to_save.apply(fix_year, axis=1)
             df_to_save.to_csv(RESA_FILE, index=False)
-            st.success("✅ Données nettoyées et sauvegardées !")
             st.rerun()
 
-       # --- PAGE RÉSERVATIONS (Version filtrée sur aujourd'hui) ---
-    elif page == "Réservations":
-        st.title("📅 Envoi des Guides du Jour")
-        
-        if os.path.exists(RESA_FILE):
-            df_resa = pd.read_csv(RESA_FILE, dtype=str)
-            
-            # 1. Obtenir la date du jour au format AAAA-MM-JJ
-            aujourdhui = datetime.now().strftime("%Y-%m-%d")
-            
-            # 2. Filtrer pour ne garder que les arrivées d'aujourd'hui
-            # On s'assure que la colonne existe
-            if "Date Arrivée" in df_resa.columns:
-                df_jour = df_resa[df_resa["Date Arrivée"] == aujourdhui].copy()
-            else:
-                df_jour = pd.DataFrame()
-
-            if df_jour.empty:
-                st.info(f"Aucune arrivée prévue aujourd'hui ({aujourdhui}).")
-            else:
-                st.write(f"Affichage des arrivées pour le : **{aujourdhui}**")
-                
-                # Configuration du sélecteur pour l'envoi
-                noms_clients = df_jour['Prénom_Nom'].tolist()
-                client_sel = st.selectbox("Sélectionnez le client du jour :", noms_clients)
-                
-                # Récupération des infos du client choisi
-                resa_sel = df_jour[df_jour['Prénom_Nom'] == client_sel].iloc[0]
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write(f"**Client :** {resa_sel['Prénom_Nom']}")
-                    st.write(f"**Appartement :** {resa_sel.get('Appartement', 'N/C')}")
-                with col2:
-                    st.write(f"**Arrivée :** {resa_sel['Date Arrivée']}")
-                    st.write(f"**Départ :** {resa_sel.get('Date Départ', 'N/C')}")
-
-                # Bouton d'envoi (uniquement pour le 014 comme précédemment)
-                if st.button("🚀 Envoyer Guide 014"):
-                    appart = str(resa_sel.get('Appartement', ''))
-                    if "14" in appart or "014" in appart:
-                        webhook_014 = "https://hook.eu2.make.com/7v3yap243qgcxbu8pc539owwgrvr32qt"
-                        payload = {
-                            "Nom": str(resa_sel['Prénom_Nom']),
-                            "Date_arrivée": str(resa_sel['Date Arrivée']),
-                            "Date_départ": str(resa_sel.get('Date Départ', '')),
-                            "Code_studio": str(resa_sel.get('Code Studio', '')),
-                            "Code_résidence": str(resa_sel.get('Code Résidence', ''))
-                        }
-                        try:
-                            r = requests.post(webhook_014, json=payload)
-                            if r.status_code == 200:
-                                st.success(f"✅ Guide envoyé pour {resa_sel['Prénom_Nom']} !")
-                            else:
-                                st.error("Erreur Make")
-                        except Exception as e:
-                            st.error(f"Erreur : {e}")
-                    else:
-                        st.warning("Ce client n'est pas dans l'appartement 014.")
-
-            st.divider()
-            # Affichage du tableau complet en dessous au cas où tu as besoin de voir les autres
-            with st.expander("Voir toutes les réservations (Historique)"):
-                st.dataframe(df_resa, use_container_width=True)
+        st.divider()
+        st.subheader("🗓️ Calendrier de contrôle")
+        evts = []
+        for _, r in edited_resa.iterrows():
+            try:
+                d1 = pd.to_datetime(r["Date Arrivée"])
+                d2 = pd.to_datetime(r["Date Départ"])
+                if d2 >= d1:
+                    apt = str(r["Appartement"])
+                    color = "#1E90FF" if "014" in apt else "#2E8B57" if "119" in apt else "#808080"
+                    evts.append({
+                        "title": f"[{apt}] {r['Prénom_Nom']}", 
+                        "start": d1.strftime("%Y-%m-%d"), 
+                        "end": d2.strftime("%Y-%m-%d"), 
+                        "color": color, "allDay": True
+                    })
+            except: continue
+        calendar(events=evts, options={"initialView": "dayGridMonth", "locale": "fr"})
                 
     # --- PAGE DÉTAIL 014 ---
     elif page == "Détail 014":
