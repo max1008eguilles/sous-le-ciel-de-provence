@@ -229,60 +229,71 @@ if check_password():
             st.success("✅ Données nettoyées et sauvegardées !")
             st.rerun()
 
-        # --- BLOC ENVOI GUIDE (MAKE) ---
-        st.divider()
-        st.subheader("📬 Envoi du Guide d'Arrivée")
+       # --- PAGE RÉSERVATIONS (Version filtrée sur aujourd'hui) ---
+    elif page == "Réservations":
+        st.title("📅 Envoi des Guides du Jour")
         
-        selected_index = st.selectbox(
-            "Sélectionnez la réservation pour l'envoi :",
-            edited_resa.index,
-            format_func=lambda x: f"{edited_resa.loc[x, 'Prénom_Nom']} - {edited_resa.loc[x, 'Appartement']} (le {edited_resa.loc[x, 'Date Arrivée']})"
-        )
-        
-        resa_sel = edited_resa.loc[selected_index]
-        appart_sel = str(resa_sel['Appartement'])
+        if os.path.exists(RESA_FILE):
+            df_resa = pd.read_csv(RESA_FILE, dtype=str)
+            
+            # 1. Obtenir la date du jour au format AAAA-MM-JJ
+            aujourdhui = datetime.now().strftime("%Y-%m-%d")
+            
+            # 2. Filtrer pour ne garder que les arrivées d'aujourd'hui
+            # On s'assure que la colonne existe
+            if "Date Arrivée" in df_resa.columns:
+                df_jour = df_resa[df_resa["Date Arrivée"] == aujourdhui].copy()
+            else:
+                df_jour = pd.DataFrame()
 
-        if "14" in appart_sel or "014" in appart_sel:
-            if st.button("🚀 Envoyer Guide 014"):
-                webhook_014 = "https://hook.eu2.make.com/7v3yap243qgcxbu8pc539owwgrvr32qt"
-                payload = {
-                    "Nom": str(resa_sel['Prénom_Nom']),
-                    "Date_arrivée": str(resa_sel['Date Arrivée']),
-                    "Date_départ": str(resa_sel['Date Départ']),
-                    "Code_studio": str(resa_sel.get('Code Studio', '')),
-                    "Code_résidence": str(resa_sel.get('Code Résidence', '')),
-                    "Mail": str(resa_sel.get('Mail', ''))
-                }
-                try:
-                    r = requests.post(webhook_014, json=payload)
-                    if r.status_code == 200:
-                        st.success(f"✅ Guide 014 envoyé pour {resa_sel['Prénom_Nom']}")
+            if df_jour.empty:
+                st.info(f"Aucune arrivée prévue aujourd'hui ({aujourdhui}).")
+            else:
+                st.write(f"Affichage des arrivées pour le : **{aujourdhui}**")
+                
+                # Configuration du sélecteur pour l'envoi
+                noms_clients = df_jour['Prénom_Nom'].tolist()
+                client_sel = st.selectbox("Sélectionnez le client du jour :", noms_clients)
+                
+                # Récupération des infos du client choisi
+                resa_sel = df_jour[df_jour['Prénom_Nom'] == client_sel].iloc[0]
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write(f"**Client :** {resa_sel['Prénom_Nom']}")
+                    st.write(f"**Appartement :** {resa_sel.get('Appartement', 'N/C')}")
+                with col2:
+                    st.write(f"**Arrivée :** {resa_sel['Date Arrivée']}")
+                    st.write(f"**Départ :** {resa_sel.get('Date Départ', 'N/C')}")
+
+                # Bouton d'envoi (uniquement pour le 014 comme précédemment)
+                if st.button("🚀 Envoyer Guide 014"):
+                    appart = str(resa_sel.get('Appartement', ''))
+                    if "14" in appart or "014" in appart:
+                        webhook_014 = "https://hook.eu2.make.com/7v3yap243qgcxbu8pc539owwgrvr32qt"
+                        payload = {
+                            "Nom": str(resa_sel['Prénom_Nom']),
+                            "Date_arrivée": str(resa_sel['Date Arrivée']),
+                            "Date_départ": str(resa_sel.get('Date Départ', '')),
+                            "Code_studio": str(resa_sel.get('Code Studio', '')),
+                            "Code_résidence": str(resa_sel.get('Code Résidence', ''))
+                        }
+                        try:
+                            r = requests.post(webhook_014, json=payload)
+                            if r.status_code == 200:
+                                st.success(f"✅ Guide envoyé pour {resa_sel['Prénom_Nom']} !")
+                            else:
+                                st.error("Erreur Make")
+                        except Exception as e:
+                            st.error(f"Erreur : {e}")
                     else:
-                        st.error(f"❌ Erreur Make ({r.status_code})")
-                except Exception as e:
-                    st.error(f"❌ Erreur : {e}")
-        else:
-            st.info("Sélectionnez une réservation du studio 014 pour activer l'envoi.")
+                        st.warning("Ce client n'est pas dans l'appartement 014.")
 
-        st.divider()
-        st.subheader("🗓️ Calendrier de contrôle")
-        evts = []
-        for _, r in edited_resa.iterrows():
-            try:
-                d1 = pd.to_datetime(r["Date Arrivée"])
-                d2 = pd.to_datetime(r["Date Départ"])
-                if d2 >= d1:
-                    apt = str(r["Appartement"])
-                    color = "#1E90FF" if "014" in apt else "#2E8B57" if "119" in apt else "#808080"
-                    evts.append({
-                        "title": f"[{apt}] {r['Prénom_Nom']}", 
-                        "start": d1.strftime("%Y-%m-%d"), 
-                        "end": d2.strftime("%Y-%m-%d"), 
-                        "color": color, "allDay": True
-                    })
-            except: continue
-        calendar(events=evts, options={"initialView": "dayGridMonth", "locale": "fr"})
-
+            st.divider()
+            # Affichage du tableau complet en dessous au cas où tu as besoin de voir les autres
+            with st.expander("Voir toutes les réservations (Historique)"):
+                st.dataframe(df_resa, use_container_width=True)
+                
     # --- PAGE DÉTAIL 014 ---
     elif page == "Détail 014":
         st.title("🏠 Détail Studio 014")
