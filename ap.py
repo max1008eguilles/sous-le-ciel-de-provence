@@ -109,4 +109,36 @@ if page == "RNM IMMO":
                      color_discrete_map={"Patrimoine Net Bien": "#7030A0", "Capital Restant": "#E1E1E1"})
         
         fig.update_traces(name="Patrimoine Net", selector=dict(name="Patrimoine Net Bien"), text=df_plot['% Net'], textposition='inside')
-        fig.update_traces(name="Capital Restant", selector=dict
+        fig.update_traces(name="Capital Restant", selector=dict(name="Capital Restant"), text=df_plot['% Dette'], textposition='inside')
+        st.plotly_chart(fig, use_container_width=True)
+
+# --- PAGE COMPTA ---
+elif page == "COMPTA":
+    st.title("💰 Comptabilité - RNM IMMO")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Montant CIC", f"{solde_cic:,.2f} €")
+    c2.metric("Montant Cash", f"{solde_cash_physique:,.2f} €")
+    c3.metric("TOTAL TRESORERIE", f"{total_treso_dynamique:,.2f} €")
+
+    st.divider()
+    col_add, col_list = st.columns([1, 2])
+    with col_add:
+        st.subheader("➕ Ajouter")
+        with st.form("f_compta"):
+            d = st.date_input("Date", date.today())
+            t = st.selectbox("Type", ["Revenu", "Dépense"])
+            cpt = st.selectbox("Compte", ["CIC", "Cash"])
+            m = st.number_input("Montant", min_value=0.0)
+            txt = st.text_input("Commentaire")
+            check = st.checkbox("Justificatif ?")
+            if st.form_submit_button("Valider"):
+                new = pd.DataFrame([[d, t, cpt, m, txt, check]], columns=df_compta.columns)
+                pd.concat([df_compta, new], ignore_index=True).to_csv(COMPTA_FILE, index=False)
+                st.rerun()
+
+    with col_list:
+        st.subheader("📝 Journal")
+        ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True, column_config={"Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"), "Justificatif": st.column_config.CheckboxColumn("Justificatif")})
+        if st.button("💾 Sauvegarder Compta"):
+            ed_c.to_csv(COMPTA_FILE, index=False)
+            st.rerun()
