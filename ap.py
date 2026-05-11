@@ -374,7 +374,8 @@ if check_password():
             rows = [{"Date": d.strftime("%d/%m"), "Montant": f"{v['montant']:.2f} €" if v['montant'] > 0 else "-", "Client": v["client"], "Action": "🟢 Ménage" if v["menage"] else ""} for d,v in month_data.items()]
             st.table(pd.DataFrame(rows).style.apply(lambda x: ['background-color: #2E8B57; color: white' if 'Ménage' in str(x.Action) else '' for i in x], axis=1))
 
-   # --- PAGE RO 2026 ---
+
+# --- PAGE RO 2026 ---
     elif page == "RO 2026":
         st.title("📈 Récapitulatif Opérationnel - RO 2026")
         
@@ -398,14 +399,14 @@ if check_password():
             m_num = i + 1
             days_in_month = (date(2026, m_num % 12 + 1, 1) - date(2026, m_num, 1)).days if m_num < 12 else 31
             
-            # --- DONNÉES STUDIOS ---
+            # --- DONNÉES STUDIOS (Filtrées sur 2026) ---
             res_014 = df_resa[(df_resa["Appartement"].isin(["014", "14", 14])) & (pd.to_datetime(df_resa["Date Arrivée"]).dt.month == m_num) & (pd.to_datetime(df_resa["Date Arrivée"]).dt.year == 2026)]
             res_119 = df_resa[(df_resa["Appartement"].isin(["119"])) & (pd.to_datetime(df_resa["Date Arrivée"]).dt.month == m_num) & (pd.to_datetime(df_resa["Date Arrivée"]).dt.year == 2026)]
             
             ca_014, men_014 = res_014["Montant"].sum(), len(res_014) * 20.0
             ca_119, men_119 = res_119["Montant"].sum(), len(res_119) * 20.0
             
-            # Objectifs (Sécurité colonne 'Bien')
+            # Récupération des objectifs spécifiques par studio si la colonne 'Bien' existe
             obj_014 = df_obj_all[(df_obj_all["Année"] == 2026) & (df_obj_all["Mois"] == mois_nom) & (df_obj_all.get("Bien", "") == "014")]["Objectif"].sum() if "Bien" in df_obj_all.columns else 1250.0
             obj_119 = df_obj_all[(df_obj_all["Année"] == 2026) & (df_obj_all["Mois"] == mois_nom) & (df_obj_all.get("Bien", "") == "119")]["Objectif"].sum() if "Bien" in df_obj_all.columns else 1250.0
 
@@ -420,7 +421,7 @@ if check_password():
             total_nuits = len(res_014) + len(res_119)
             net_rnm = total_ca - ch_rnm - total_menages - cr_rnm
 
-            # Remplissage des colonnes
+            # Remplissage du dictionnaire
             final_matrix["Nb nuits (Total)"].append(total_nuits)
             final_matrix["% occu (Total)"].append(f"{(total_nuits/(days_in_month*2)*100):.1f}%")
             final_matrix["P moyen (Total)"].append(f"{(total_ca/total_nuits if total_nuits > 0 else 0):.2f}€")
@@ -432,11 +433,13 @@ if check_password():
             final_matrix["Objectif (RNM)"].append(total_obj)
             final_matrix["% Objectif (RNM)"].append(f"{(total_ca/total_obj*100 if total_obj > 0 else 0):.1f}%")
             final_matrix["NET AV IMP (RNM)"].append(net_rnm)
+            
             final_matrix["--- EGUILLES 014 ---"].append("")
             final_matrix["CA (014)"].append(ca_014)
             final_matrix["FRAIS MENAGE (014)"].append(men_014)
             final_matrix["Objectif (014)"].append(obj_014)
             final_matrix["% Objectif (014)"].append(f"{(ca_014/obj_014*100 if obj_014 > 0 else 0):.1f}%")
+            
             final_matrix["--- EGUILLES 119 ---"].append("")
             final_matrix["CA (119)"].append(ca_119)
             final_matrix["CREDIT (119)"].append(cr_rnm)
@@ -444,24 +447,25 @@ if check_password():
             final_matrix["Objectif (119)"].append(obj_119)
             final_matrix["% Objectif (119)"].append(f"{(ca_119/obj_119*100 if obj_119 > 0 else 0):.1f}%")
 
-        # Affichage du tableau statique (sans barre de défilement)
+        # Affichage du tableau de bord complet sans défilement
         st.subheader("📊 Tableau de Bord Global 2026")
         df_ro_final = pd.DataFrame(final_matrix, index=mois_noms).T
-        st.table(df_ro_final) # st.table force l'affichage complet
+        st.table(df_ro_final) 
 
         st.divider()
         st.subheader("🎯 Synthèse Annuelle RNM IMMO")
         
-        # Calculs annuels pour la mise en avant
-        c1, c2, c3, c4 = st.columns(4)
-        c5, c6, c7, _ = st.columns(4)
-        
+        # Calculs des métriques annuelles cumulées
         t_ca = sum(final_matrix["CA (RNM)"])
         t_ch = sum(final_matrix["CHARGES (RNM)"])
         t_men = sum(final_matrix["FRAIS MENAGE (RNM)"])
         t_cr = sum(final_matrix["CREDIT (RNM)"])
-        t_obj = sum(final_matrix["Objectif (RNM)"])
+        t_obj = sum(final_matrix["Objectif (RNM)"]) # Somme des objectifs des deux studios
         t_net = sum(final_matrix["NET AV IMP (RNM)"])
+        
+        # Mise en page des indicateurs en bas de page
+        c1, c2, c3, c4 = st.columns(4)
+        c5, c6, c7, _ = st.columns(4)
         
         c1.metric("CA TOTAL", f"{t_ca:,.2f} €")
         c2.metric("CHARGES", f"{t_ch:,.2f} €")
@@ -469,4 +473,4 @@ if check_password():
         c4.metric("CRÉDIT", f"{t_cr:,.2f} €")
         c5.metric("OBJECTIF", f"{t_obj:,.2f} €")
         c6.metric("% OBJECTIF", f"{(t_ca/t_obj*100 if t_obj > 0 else 0):.1f}%")
-        c7.metric("NET AV IMP", f"{t_net:,.2f} €", delta=f"{t_net:,.2f}€", delta_color="normal")
+        c7.metric("NET AV IMP", f"{t_net:,.2f} €")
