@@ -138,7 +138,20 @@ elif page == "COMPTA":
 
     with col_list:
         st.subheader("📝 Journal")
-        ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True, column_config={"Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"), "Justificatif": st.column_config.CheckboxColumn("Justificatif")})
-        if st.button("💾 Sauvegarder Compta"):
+        # Instruction pour la suppression facile
+        st.caption("💡 Pour supprimer : cliquez à gauche d'une ligne pour la sélectionner, puis appuyez sur 'Suppr' au clavier.")
+        
+        ed_c = st.data_editor(
+            df_compta, 
+            num_rows="dynamic", # Permet d'ajouter/supprimer des lignes directement
+            use_container_width=True, 
+            column_config={
+                "Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"), 
+                "Justificatif": st.column_config.CheckboxColumn("Justificatif")
+            }
+        )
+        
+        if st.button("💾 Sauvegarder les modifications (ou suppressions)"):
             ed_c.to_csv(COMPTA_FILE, index=False)
+            st.success("Journal mis à jour !")
             st.rerun()
