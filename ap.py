@@ -5,6 +5,7 @@ import os
 import plotly.express as px
 from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
+from streamlit_calendar import calendar
 
 # --- CONFIG DE LA PAGE ---
 st.set_page_config(page_title="RNM IMMO - Expert", layout="wide")
@@ -38,7 +39,7 @@ if check_password():
     RESA_FILE = "reservations.csv"
     OBJ_FILE = "objectifs_014_v2.csv"
 
-    # --- CHARGEMENT DES DONNÉES (VERSION COMPLÈTE) ---
+    # --- CHARGEMENT DES DONNÉES (VERSION COMPLÈTE & ROBUSTE) ---
     def load_config():
         if os.path.exists(CONFIG_FILE):
             df = pd.read_csv(CONFIG_FILE)
@@ -49,12 +50,21 @@ if check_password():
 
     def load_compta():
         if os.path.exists(COMPTA_FILE):
-            return pd.read_csv(COMPTA_FILE)
+            df = pd.read_csv(COMPTA_FILE)
+            # On s'assure que toutes les colonnes existent pour ne pas les perdre
+            for col in ["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"]:
+                if col not in df.columns: df[col] = ""
+            return df
         return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])
 
     def load_resa():
         if os.path.exists(RESA_FILE):
-            return pd.read_csv(RESA_FILE, dtype=str)
+            df = pd.read_csv(RESA_FILE, dtype=str)
+            # Restauration de toutes les colonnes travaillées
+            cols = ["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Montant", "Numéro tel", "Mail", "Code Résidence", "Code Studio", "Code Autre"]
+            for c in cols:
+                if c not in df.columns: df[c] = ""
+            return df
         return pd.DataFrame(columns=["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Montant", "Numéro tel", "Mail", "Code Résidence", "Code Studio", "Code Autre"])
 
     def load_objectifs():
@@ -77,7 +87,9 @@ if check_password():
         cre = df_c[df_c["Type"] == "Crédit"]["Montant"].sum()
         return float(rev - dep - cre)
 
-    total_treso = get_solde("CIC") + get_solde("Cash")
+    solde_cic = get_solde("CIC")
+    solde_cash = get_solde("Cash")
+    total_treso = solde_cic + solde_cash
 
     # --- SIDEBAR ---
     with st.sidebar:
@@ -95,9 +107,9 @@ if check_password():
             st.session_state["password_correct"] = False
             st.rerun()
 
-    # --- PAGE 1 : RNM IMMO (PATRIMOINE & GRAPHES) ---
+    # --- PAGE 1 : RNM IMMO (PATRIMOINE & GRAPHIQUES) ---
     if page == "RNM IMMO":
-        st.title("🏛️ RNM IMMO - Patrimoine")
+        st.title("🏛️ RNM IMMO - Patrimoine Global")
         if not df_cfg.empty:
             for c in ["Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Taux (%)", "Durée (mois)"]:
                 df_cfg[c] = pd.to_numeric(df_cfg[c], errors='coerce').fillna(0)
@@ -121,11 +133,11 @@ if check_password():
             t_net = (t_brut + total_treso) - t_crd
         else: t_brut = t_crd = t_net = 0
 
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Patrimoine Brut", f"{t_brut:,.0f} €")
-        m2.metric("Dette Bancaire", f"{t_crd:,.0f} €")
-        m3.metric("Trésorerie", f"{total_treso:,.2f} €")
-        m4.metric("Patrimoine Net", f"{t_net:,.0f} €")
+        cols_m = st.columns(4)
+        cols_m[0].metric("Patrimoine Brut", f"{t_brut:,.0f} €")
+        cols_m[1].metric("Dette Bancaire", f"{t_crd:,.0f} €")
+        cols_m[2].metric("Trésorerie", f"{total_treso:,.2f} €")
+        cols_m[3].metric("Patrimoine Net", f"{t_net:,.0f} €")
         
         st.divider()
         ed_cfg = st.data_editor(df_cfg, num_rows="dynamic", use_container_width=True)
@@ -136,37 +148,62 @@ if check_password():
             
         if not df_cfg.empty:
             fig = px.bar(df_cfg, x="Bien", y=["Patrimoine Net Bien", "Capital Restant"], 
-                         barmode="stack", title="Répartition du Patrimoine",
+                         barmode="stack", title="Analyse Actif / Passif par Bien",
                          color_discrete_map={"Patrimoine Net Bien": "#7030A0", "Capital Restant": "#E1E1E1"})
             st.plotly_chart(fig, use_container_width=True)
 
-    # --- PAGE 2 : COMPTA (AVEC JUSTIFICATIFS) ---
+    # --- PAGE 2 : COMPTA (RESTO DES COLONNES) ---
     elif page == "COMPTA":
         st.title("💰 Comptabilité")
-        st.subheader("📝 Journal des opérations")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Compte CIC", f"{solde_cic:,.2f} €")
+        c2.metric("Cash Physique", f"{solde_cash:,.2f} €")
+        c3.metric("TOTAL", f"{total_treso:,.2f} €")
+        
+        st.divider()
         ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True)
         if st.button("💾 Sauvegarder Comptabilité"):
             ed_c.to_csv(COMPTA_FILE, index=False)
-            st.success("Compta enregistrée !")
+            st.success("Données sauvegardées !")
             st.rerun()
 
-    # --- PAGE 3 : RÉSERVATIONS (AVEC TOUTES LES COLONNES) ---
+    # --- PAGE 3 : RÉSERVATIONS (RESTO TOTALE + CALENDRIER CLIQUABLE) ---
     elif page == "Réservations":
         st.title("📅 Gestion des Réservations")
-        ed_resa = st.data_editor(df_resa, num_rows="dynamic", use_container_width=True, key="resa_full_v2")
+        
+        # Préparation des dates pour l'éditeur cliquable
+        df_resa_view = df_resa.copy()
+        df_resa_view["Date Arrivée"] = pd.to_datetime(df_resa_view["Date Arrivée"], errors='coerce').dt.date
+        df_resa_view["Date Départ"] = pd.to_datetime(df_resa_view["Date Départ"], errors='coerce').dt.date
+
+        ed_resa = st.data_editor(
+            df_resa_view, 
+            num_rows="dynamic", 
+            use_container_width=True,
+            key="resa_master_v3",
+            column_config={
+                "Date Arrivée": st.column_config.DateColumn("Arrivée", format="DD/MM/YYYY"),
+                "Date Départ": st.column_config.DateColumn("Départ", format="DD/MM/YYYY"),
+                "Appartement": st.column_config.SelectboxColumn("Appartement", options=["014", "119"]),
+                "Montant": st.column_config.NumberColumn("Montant", format="%.2f €"),
+                "Code Autre": st.column_config.TextColumn("Code Autre")
+            }
+        )
         
         if st.button("💾 SAUVEGARDER RÉSERVATIONS"):
             df_s = ed_resa.copy()
-            # Correction des dates pour éviter les bugs 2025/2026
-            def fix_date(row):
+            # On force le format texte ISO pour le CSV et on corrige les erreurs d'années
+            df_s["Date Arrivée"] = df_s["Date Arrivée"].astype(str)
+            def fix_y(row):
                 arr, dep = str(row["Date Arrivée"]), str(row["Date Départ"])
                 if "2025" in dep and "2026" in arr: return dep.replace("2025", "2026")
                 return dep
-            df_s["Date Départ"] = df_s.apply(fix_date, axis=1)
+            df_s["Date Départ"] = df_s.apply(fix_y, axis=1)
             df_s.to_csv(RESA_FILE, index=False)
+            st.success("Toutes les colonnes et dates ont été synchronisées !")
             st.rerun()
 
-    # --- PAGE 4 : DÉTAIL 014 (COMPLÈTE) ---
+    # --- PAGE 4 : DÉTAIL 014 (STATS MENSUELLES & OBJECTIFS) ---
     elif page == "Détail 014":
         st.title("🏠 Détail Local 014")
         
@@ -213,12 +250,11 @@ if check_password():
         c5.metric("% Occupation", f"{(n_m/len(days)*100):.1f}%")
         st.divider()
 
-        # Calendrier détaillé
-        st.subheader("📅 Détail quotidien")
+        st.subheader("📅 Détail des nuitées du mois")
         rows = [{"Date": d.strftime("%d/%m"), "Montant": f"{v['mt']:.2f} €" if v['mt']>0 else "-", "Client": v["cl"]} for d,v in m_vals.items()]
         st.table(pd.DataFrame(rows))
 
-        with st.expander("🎯 Configurer Objectifs"):
+        with st.expander("🎯 Configurer les Objectifs de l'année"):
             ed_obj = st.data_editor(df_obj_y, use_container_width=True, hide_index=True)
             if st.button("💾 Sauver Objectifs"):
                 df_oth = df_obj_all[df_obj_all["Année"].astype(str) != str(sel_year)]
