@@ -5,6 +5,7 @@ import os
 import plotly.express as px
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
+from streamlit_calendar import calendar
 
 # --- CONFIG DE LA PAGE ---
 st.set_page_config(page_title="RNM IMMO - Expert", layout="wide")
@@ -54,8 +55,6 @@ if check_password():
     def load_resa():
         if os.path.exists(RESA_FILE):
             df = pd.read_csv(RESA_FILE)
-            df["Date Arrivée"] = pd.to_datetime(df["Date Arrivée"]).dt.date
-            df["Date Départ"] = pd.to_datetime(df["Date Départ"]).dt.date
             return df
         return pd.DataFrame(columns=["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Montant", "Numéro tel", "Mail", "Code Résidence", "Code Studio", "Code Autre"])
 
@@ -79,7 +78,6 @@ if check_password():
     with st.sidebar:
         st.title("📂 Navigation")
         st.write(f"👤 Connecté : **{st.session_state.get('user_authenticated')}**")
-        # Ajout de l'onglet Réservations après RO 2026
         page = st.radio("Aller vers :", ["RNM IMMO", "COMPTA", "RO 2026", "Réservations", "Détail 014", "Détail 119"])
         st.divider()
         st.metric("Trésorerie Totale", f"{total_treso_dynamique:,.2f} €")
@@ -109,7 +107,6 @@ if check_password():
             df_cfg["% Net"] = (df_cfg["Patrimoine Net"] / df_cfg["Valeur Actuelle"] * 100).fillna(0)
             df_cfg["% Dette"] = (df_cfg["Capital Restant"] / df_cfg["Valeur Actuelle"] * 100).fillna(0)
         else: total_brut = total_crd = total_net_patrimoine = 0
-
         st.title("🏛️ RNM IMMO - Tableau de Bord")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Patrimoine Brut", f"{total_brut:,.0f} €")
@@ -142,8 +139,7 @@ if check_password():
         c2.metric("Montant Cash", f"{solde_cash_physique:,.2f} €")
         c3.metric("TOTAL TRESORERIE", f"{total_treso_dynamique:,.2f} €")
         if not df_compta.empty:
-            st.divider()
-            st.subheader("📊 Analyse Financière")
+            st.divider(); st.subheader("📊 Analyse Financière")
             df_calc = df_compta.copy()
             df_calc['Date'] = pd.to_datetime(df_calc['Date'])
             df_calc['Année'] = df_calc['Date'].dt.strftime('%Y')
@@ -182,11 +178,11 @@ if check_password():
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
 
-    # --- NOUVELLE PAGE RÉSERVATIONS ---
+    # --- PAGE RÉSERVATIONS AVEC CALENDRIER ---
     elif page == "Réservations":
         st.title("📅 Gestion des Réservations")
         
-        # Logique de calcul automatique du Code Autre (Code Résidence sans le dernier caractère)
+        # Mise à jour auto du Code Autre
         if not df_resa.empty:
             df_resa["Code Autre"] = df_resa["Code Résidence"].astype(str).apply(lambda x: x[:-1] if len(x) > 0 else "")
 
@@ -206,6 +202,32 @@ if check_password():
         if st.button("💾 Sauvegarder Réservations"):
             edited_resa.to_csv(RESA_FILE, index=False)
             st.rerun()
+
+        st.divider()
+        st.subheader("🗓️ Calendrier des Occupations")
+        
+        # Préparation des événements pour le calendrier
+        calendar_events = []
+        for i, row in edited_resa.iterrows():
+            try:
+                # Couleur selon l'appartement
+                color = "#1E90FF" if str(row["Appartement"]) == "014" else "#2E8B57" # Bleu ou Vert
+                calendar_events.append({
+                    "title": f"[{row['Appartement']}] {row['Prénom_Nom']}",
+                    "start": str(row["Date Arrivée"]),
+                    "end": str(row["Date Départ"]),
+                    "color": color,
+                    "allDay": True
+                })
+            except: pass
+
+        calendar_options = {
+            "initialView": "dayGridMonth",
+            "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth,listMonth"},
+            "locale": "fr"
+        }
+        
+        calendar(events=calendar_events, options=calendar_options)
 
     elif page == "RO 2026": st.title("📈 RO 2026")
     elif page == "Détail 014": st.title("🏠 Détail 014")
