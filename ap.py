@@ -72,7 +72,7 @@ if check_password():
     solde_cash_physique = get_solde("Cash")
     total_treso_dynamique = solde_cic + solde_cash_physique
 
-    # --- BARRE LATÉRALE AVEC LES NOUVEAUX ONGLET ---
+    # --- BARRE LATÉRALE ---
     with st.sidebar:
         st.title("📂 Navigation")
         st.write(f"👤 Connecté : **{st.session_state.get('user_authenticated')}**")
@@ -88,6 +88,7 @@ if check_password():
         if not df_cfg.empty:
             for c in ["Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
                 df_cfg[c] = pd.to_numeric(df_cfg[c], errors='coerce').fillna(0)
+            
             def calc_crd(row):
                 try:
                     P, r, n = float(row["Montant Crédit"]), (float(row["Taux (%)"])/100)/12, int(row["Durée (mois)"])
@@ -97,12 +98,20 @@ if check_password():
                     if m >= n: return 0
                     return P * ((1 + r)**n - (1 + r)**m) / ((1 + r)**n - 1)
                 except: return 0
+
             total_brut = df_cfg["Valeur Actuelle"].sum()
             df_cfg["Capital Restant"] = df_cfg.apply(calc_crd, axis=1)
             total_crd = df_cfg["Capital Restant"].sum()
             total_net = (total_brut + total_treso_dynamique) - total_crd
             df_cfg["Patrimoine Net Bien"] = df_cfg["Valeur Actuelle"] - df_cfg["Capital Restant"]
-        else: total_brut = total_crd = total_net = 0
+            
+            # --- AJOUT DU CALCUL DES % ---
+            if total_brut > 0:
+                df_cfg["%"] = (df_cfg["Valeur Actuelle"] / total_brut) * 100
+            else:
+                df_cfg["%"] = 0
+        else:
+            total_brut = total_crd = total_net = 0
 
         st.title("🏛️ RNM IMMO - Tableau de Bord")
         m1, m2, m3, m4 = st.columns(4)
@@ -110,12 +119,20 @@ if check_password():
         m2.metric("Dette Bancaire", f"{total_crd:,.0f} €")
         m3.metric("Cash disponible", f"{total_treso_dynamique:,.2f} €")
         m4.metric("Patrimoine Net", f"{total_net:,.0f} €")
+        
         st.divider()
         st.subheader("⚙️ Configuration des Biens")
+        # Affichage avec le pourcentage formaté
         edited_df = st.data_editor(df_cfg, num_rows="dynamic", use_container_width=True)
         if st.button("💾 Sauvegarder Biens"):
-            edited_df.to_csv(CONFIG_FILE, index=False)
+            # On ne sauvegarde pas la colonne calculée % pour éviter les doublons au chargement
+            if "%" in edited_df.columns:
+                save_df = edited_df.drop(columns=["%"])
+            else:
+                save_df = edited_df
+            save_df.to_csv(CONFIG_FILE, index=False)
             st.rerun()
+
         if not df_cfg.empty:
             st.divider()
             st.subheader("📊 Détail par Bien")
@@ -125,14 +142,11 @@ if check_password():
     # --- PAGE COMPTA ---
     elif page == "COMPTA":
         st.title("💰 Comptabilité - RNM IMMO")
-        
-        # TES 3 METRICS (Remis comme l'original)
         c1, c2, c3 = st.columns(3)
         c1.metric("Montant CIC", f"{solde_cic:,.2f} €")
         c2.metric("Montant Cash", f"{solde_cash_physique:,.2f} €")
         c3.metric("TOTAL TRESORERIE", f"{total_treso_dynamique:,.2f} €")
         
-        # ANALYSE FINANCIÈRE FUSIONNÉE
         if not df_compta.empty:
             st.divider()
             st.subheader("📊 Analyse Financière")
@@ -158,7 +172,6 @@ if check_password():
             
             st.table(pd.DataFrame(final_rows).style.format("{:,.2f} €", subset=["Revenus", "Charges", "Crédit", "Cash Flow"]))
 
-        # SAISIE ET JOURNAL
         st.divider()
         col_add, col_list = st.columns([1, 2])
         with col_add:
