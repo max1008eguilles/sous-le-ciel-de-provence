@@ -55,7 +55,7 @@ if check_password():
     def load_resa():
         if os.path.exists(RESA_FILE):
             df = pd.read_csv(RESA_FILE)
-            # Fix pour les erreurs de format de date Streamlit
+            # Conversion forcée pour éviter les erreurs st.data_editor
             df["Date Arrivée"] = pd.to_datetime(df["Date Arrivée"], errors='coerce').dt.date
             df["Date Départ"] = pd.to_datetime(df["Date Départ"], errors='coerce').dt.date
             return df
@@ -88,7 +88,7 @@ if check_password():
             st.session_state["password_correct"] = False
             st.rerun()
 
-    # --- PAGE RNM IMMO (RETOUR À LA VERSION PROPRE) ---
+    # --- PAGE RNM IMMO (STRICTEMENT INCHANGÉE) ---
     if page == "RNM IMMO":
         if not df_cfg.empty:
             for c in ["Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
@@ -134,7 +134,7 @@ if check_password():
                     fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net Bien'] + (row['Capital Restant']/2), text=f"<b>{row['Capital Restant']:,.0f}€</b><br>{row['% Dette']:.1f}%", showarrow=False)
             st.plotly_chart(fig, use_container_width=True)
 
-    # --- PAGE COMPTA ---
+    # --- PAGE COMPTA (STRICTEMENT INCHANGÉE) ---
     elif page == "COMPTA":
         st.title("💰 Comptabilité - RNM IMMO")
         c1, c2, c3 = st.columns(3)
@@ -147,7 +147,7 @@ if check_password():
             ed_c.to_csv(COMPTA_FILE, index=False)
             st.rerun()
 
-    # --- PAGE RÉSERVATIONS (AVEC COULEURS OK) ---
+    # --- PAGE RÉSERVATIONS (COULEURS RECTIFIÉES) ---
     elif page == "Réservations":
         st.title("📅 Gestion des Réservations")
         
@@ -155,7 +155,7 @@ if check_password():
         df_resa["Code Résidence"] = df_resa["Code Résidence"].fillna("").astype(str)
         df_resa["Code Autre"] = df_resa["Code Résidence"].apply(lambda x: x[:-1] if len(x) > 1 else "")
 
-        # Tableau des réservations
+        # Tableau des réservations avec sécurité sur les dates
         edited_resa = st.data_editor(
             df_resa, 
             num_rows="dynamic", 
@@ -177,11 +177,14 @@ if check_password():
         evts = []
         for _, r in edited_resa.iterrows():
             if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
-                # --- LES COULEURS SONT ICI ---
-                # Bleu (#0000FF) pour le 014, Vert (#008000) pour le 119
-                color = "blue" if str(r["Appartement"]) == "014" else "green"
+                # --- RECTIFICATION DES COULEURS ---
+                # Bleu pour le 014, Vert pour le 119
+                # On vérifie si la chaîne contient "014" ou "119"
+                apt_str = str(r["Appartement"])
+                color = "#1E90FF" if "014" in apt_str else "#2E8B57" if "119" in apt_str else "#808080"
+                
                 evts.append({
-                    "title": f"[{r['Appartement']}] {r['Prénom_Nom']}", 
+                    "title": f"[{apt_str}] {r['Prénom_Nom']}", 
                     "start": str(r["Date Arrivée"]), 
                     "end": str(r["Date Départ"]), 
                     "color": color, 
