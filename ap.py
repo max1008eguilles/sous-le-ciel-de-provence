@@ -38,7 +38,8 @@ if check_password():
     def load_config():
         if os.path.exists(CONFIG_FILE):
             df = pd.read_csv(CONFIG_FILE)
-            df["Date Début"] = pd.to_datetime(df["Date Début"]).dt.date
+            if "Date Début" in df.columns:
+                df["Date Début"] = pd.to_datetime(df["Date Début"]).dt.date
             return df
         return pd.DataFrame(columns=["Bien", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"])
 
@@ -98,7 +99,6 @@ if check_password():
             total_net_patrimoine = (total_brut + total_treso_dynamique) - total_crd
             df_cfg["Patrimoine Net"] = df_cfg["Valeur Actuelle"] - df_cfg["Capital Restant"]
             
-            # Pourcentages pour le graphique (Ratio Patrimoine Net / Valeur Actuelle)
             df_cfg["% Net"] = (df_cfg["Patrimoine Net"] / df_cfg["Valeur Actuelle"] * 100).fillna(0)
             df_cfg["% Dette"] = (df_cfg["Capital Restant"] / df_cfg["Valeur Actuelle"] * 100).fillna(0)
         else:
@@ -123,25 +123,30 @@ if check_password():
             st.divider()
             st.subheader("📊 Détail par Bien (Répartition %)")
             
-            # Préparation des données pour Plotly avec étiquettes
-            df_plot = df_cfg.copy()
-            fig = px.bar(df_plot, x="Bien", y=["Patrimoine Net", "Capital Restant"], 
+            # --- GRAPHIQUE NETTOYÉ ---
+            fig = px.bar(df_cfg, x="Bien", y=["Patrimoine Net", "Capital Restant"], 
                          barmode="stack", 
-                         color_discrete_map={"Patrimoine Net": "#7030A0", "Capital Restant": "#E1E1E1"},
-                         text_auto='.1f') # Affiche les valeurs sur les barres
+                         color_discrete_map={"Patrimoine Net": "#7030A0", "Capital Restant": "#E1E1E1"})
             
-            # Customisation des étiquettes pour afficher le %
-            fig.update_traces(texttemplate='%{y:,.0f}', textposition='inside')
-            
-            # Ajout des annotations de % manuellement sur les barres pour coller à ta capture
+            # Mise en forme propre des labels
             for i, row in df_cfg.iterrows():
-                fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net']/2, text=f"{row['% Net']:.1f}%", showarrow=False, font=dict(color="white"))
-                if row['% Dette'] > 0:
-                    fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net'] + (row['Capital Restant']/2), text=f"{row['% Dette']:.1f}%", showarrow=False)
+                # Label pour Patrimoine Net (Valeur + %)
+                fig.add_annotation(x=row['Bien'], 
+                                 y=row['Patrimoine Net']/2, 
+                                 text=f"<b>{row['Patrimoine Net']:,.0f} €</b><br>{row['% Net']:.1f}%",
+                                 showarrow=False, font=dict(color="white", size=12))
+                
+                # Label pour Dette (Valeur + %) - seulement si dette > 0
+                if row['Capital Restant'] > 500: # Évite d'afficher si trop petit
+                    fig.add_annotation(x=row['Bien'], 
+                                     y=row['Patrimoine Net'] + (row['Capital Restant']/2), 
+                                     text=f"<b>{row['Capital Restant']:,.0f} €</b><br>{row['% Dette']:.1f}%",
+                                     showarrow=False, font=dict(color="#333333", size=12))
 
+            fig.update_layout(yaxis_title="Valeur (€)", showlegend=True, legend_title="Légende")
             st.plotly_chart(fig, use_container_width=True)
 
-    # --- PAGE COMPTA (FIGÉE) ---
+    # --- PAGE COMPTA ---
     elif page == "COMPTA":
         st.title("💰 Comptabilité - RNM IMMO")
         c1, c2, c3 = st.columns(3)
@@ -195,10 +200,6 @@ if check_password():
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
 
-    # --- PAGES VIDES ---
-    elif page == "RO 2026":
-        st.title("📈 RO 2026")
-    elif page == "Détail 014":
-        st.title("🏠 Détail 014")
-    elif page == "Détail 119":
-        st.title("🏠 Détail 119")
+    elif page == "RO 2026": st.title("📈 RO 2026")
+    elif page == "Détail 014": st.title("🏠 Détail 014")
+    elif page == "Détail 119": st.title("🏠 Détail 119")
