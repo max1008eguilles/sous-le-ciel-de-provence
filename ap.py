@@ -36,7 +36,7 @@ if check_password():
     CONFIG_FILE = "config_biens_v3.csv"
     COMPTA_FILE = "compta_v3.csv"
     RESA_FILE = "reservations.csv"
-    OBJ_FILE = "objectifs_014_v2.csv" # Nouvelle version pour gérer les années
+    OBJ_FILE = "objectifs_014_v2.csv"
 
     def load_config():
         if os.path.exists(CONFIG_FILE):
@@ -66,7 +66,6 @@ if check_password():
     def load_objectifs():
         if os.path.exists(OBJ_FILE):
             return pd.read_csv(OBJ_FILE)
-        # Par défaut, créer une structure vide
         return pd.DataFrame(columns=["Année", "Mois", "Objectif"])
 
     df_compta = load_compta()
@@ -92,6 +91,13 @@ if check_password():
         page = st.radio("Aller vers :", ["RNM IMMO", "COMPTA", "RO 2026", "Réservations", "Détail 014", "Détail 119"])
         st.divider()
         st.metric("Trésorerie Totale", f"{total_treso_dynamique:,.2f} €")
+        
+        # Sélecteurs globaux pour les pages de détail
+        if page in ["Détail 014", "Détail 119"]:
+            st.divider()
+            sel_year = st.selectbox("Année", [2025, 2026, 2027], index=1)
+            sel_month = st.selectbox("Mois", list(range(1, 13)), index=date.today().month - 1)
+        
         if st.button("Se déconnecter"):
             st.session_state["password_correct"] = False
             st.rerun()
@@ -99,6 +105,7 @@ if check_password():
     # --- PAGE RNM IMMO ---
     if page == "RNM IMMO":
         st.title("🏛️ RNM IMMO - Tableau de Bord")
+        # ... (Logique identique à la précédente pour le patrimoine)
         if not df_cfg.empty:
             for c in ["Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
                 df_cfg[c] = pd.to_numeric(df_cfg[c], errors='coerce').fillna(0)
@@ -142,11 +149,11 @@ if check_password():
     # --- PAGE COMPTA ---
     elif page == "COMPTA":
         st.title("💰 Comptabilité - RNM IMMO")
+        # ... (Logique identique à la précédente)
         c1, c2, c3 = st.columns(3)
         c1.metric("Montant CIC", f"{solde_cic:,.2f} €")
         c2.metric("Montant Cash", f"{solde_cash_physique:,.2f} €")
         c3.metric("TOTAL TRESORERIE", f"{total_treso_dynamique:,.2f} €")
-        
         if not df_compta.empty:
             st.divider(); st.subheader("📊 Analyse Financière")
             df_calc = df_compta.copy()
@@ -166,7 +173,6 @@ if check_password():
                 for m, val_m in mes_mois.iterrows():
                     final_rows.append({"Période": m, "Revenus": val_m["Revenu"], "Charges": val_m["Dépense"], "Crédit": val_m["Crédit"], "Cash Flow": val_m["Revenu"]-val_m["Dépense"]-val_m["Crédit"]})
             st.table(pd.DataFrame(final_rows).style.format("{:,.2f} €", subset=["Revenus", "Charges", "Crédit", "Cash Flow"]))
-        
         st.divider()
         col_add, col_list = st.columns([1, 2])
         with col_add:
@@ -199,8 +205,6 @@ if check_password():
                 "Date Départ": st.column_config.DateColumn("Départ"),
                 "Appartement": st.column_config.SelectboxColumn("Appartement", options=["014", "119"]),
                 "Montant": st.column_config.NumberColumn("Montant", format="%.2f €"),
-                "Numéro tel": st.column_config.TextColumn("Numéro tel"),
-                "Mail": st.column_config.TextColumn("Mail"),
                 "Code Autre": st.column_config.TextColumn("Code Autre", disabled=True)
             })
         if st.button("💾 Sauvegarder Réservations"):
@@ -215,59 +219,53 @@ if check_password():
                 evts.append({"title": f"[{apt}] {r['Prénom_Nom']}", "start": str(r["Date Arrivée"]), "end": str(r["Date Départ"]), "color": color, "allDay": True})
         calendar(events=evts, options={"initialView": "dayGridMonth", "locale": "fr"})
 
-    # --- PAGE DÉTAIL 014 (AVEC OBJECTIFS PAR ANNÉE) ---
+    # --- PAGE DÉTAIL 014 (AVEC LIEN RÉSERVATIONS REMPLI) ---
     elif page == "Détail 014":
         st.title("🏠 Détail Local 014")
         
-        sel_year = st.sidebar.selectbox("Année", [2025, 2026, 2027], index=1)
-        sel_month = st.sidebar.selectbox("Mois", list(range(1, 13)), index=date.today().month - 1)
-        
-        # Gestion des objectifs pour l'année sélectionnée
+        # 1. Gestion des Objectifs
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
-        
-        # Filtrer/Préparer les objectifs pour l'année en cours
         df_obj_year = df_obj_all[df_obj_all["Année"] == sel_year].copy()
         if df_obj_year.empty:
             df_obj_year = pd.DataFrame({"Année": [sel_year]*12, "Mois": mois_noms, "Objectif": [1250.0]*12})
         
         with st.expander(f"🎯 Configurer les Objectifs du 014 pour l'année {sel_year}"):
-            st.info("Ces objectifs sont spécifiques à l'année sélectionnée dans la barre latérale.")
             edited_obj = st.data_editor(df_obj_year, use_container_width=True, hide_index=True,
-                column_config={
-                    "Année": st.column_config.NumberColumn(disabled=True),
-                    "Mois": st.column_config.TextColumn(disabled=True),
-                    "Objectif": st.column_config.NumberColumn("Objectif (€)", format="%.2f €")
-                })
+                column_config={"Année": None, "Mois": st.column_config.TextColumn(disabled=True), "Objectif": st.column_config.NumberColumn("Objectif (€)", format="%.2f €")})
             if st.button("💾 Sauvegarder Objectifs"):
-                # Fusionner avec les autres années pour la sauvegarde
                 df_obj_others = df_obj_all[df_obj_all["Année"] != sel_year]
                 pd.concat([df_obj_others, edited_obj], ignore_index=True).to_csv(OBJ_FILE, index=False)
                 st.rerun()
-        
+
         st.divider()
-        
-        # Calcul du calendrier du mois
+
+        # 2. Récupération et Remplissage des données depuis l'onglet Réservations
         first_day = date(sel_year, sel_month, 1)
         last_day = (date(sel_year, sel_month % 12 + 1, 1) - timedelta(days=1)) if sel_month < 12 else date(sel_year, 12, 31)
         days_list = [first_day + timedelta(days=i) for i in range((last_day - first_day).days + 1)]
         
-        resa_014 = df_resa[df_resa["Appartement"].isin(["014", "14"])].copy()
+        # On filtre les résas pour le 014
+        resa_014 = df_resa[df_resa["Appartement"].isin(["014", "14", 14])].copy()
         month_data = {d: {"montant": 0.0, "menage": False, "client": ""} for d in days_list}
         
         for _, r in resa_014.iterrows():
             if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
-                delta = (r["Date Départ"] - r["Date Arrivée"]).days
+                d_arr, d_dep = r["Date Arrivée"], r["Date Départ"]
+                delta = (d_dep - d_arr).days
                 if delta > 0:
-                    prix_nuit = float(r["Montant"]) / delta
-                    curr = r["Date Arrivée"]
-                    while curr < r["Date Départ"]:
+                    prix_par_nuit = float(r["Montant"]) / delta
+                    # On parcourt chaque nuit de la réservation
+                    curr = d_arr
+                    while curr < d_dep:
                         if curr in month_data:
-                            month_data[curr]["montant"] = prix_nuit
+                            month_data[curr]["montant"] = prix_par_nuit
                             month_data[curr]["client"] = r["Prénom_Nom"]
                         curr += timedelta(days=1)
-                    if r["Date Départ"] in month_data:
-                        month_data[r["Date Départ"]]["menage"] = True
+                    # Le jour du départ = Ménage
+                    if d_dep in month_data:
+                        month_data[d_dep]["menage"] = True
 
+        # 3. Calculs des indicateurs du haut
         real_m = sum(v["montant"] for v in month_data.values())
         nuits = sum(1 for v in month_data.values() if v["montant"] > 0)
         
@@ -277,6 +275,7 @@ if check_password():
         m3.metric("Prix Moyen", f"{(real_m/nuits if nuits > 0 else 0):,.2f} €")
         m4.metric("% Occupation", f"{(nuits/len(days_list)*100):.1f}%")
 
+        # 4. Affichage du Tableau et du Graphique Annuel
         col_g, col_d = st.columns([1, 4])
         with col_g:
             st.subheader(f"Global {sel_year}")
