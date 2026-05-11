@@ -101,7 +101,6 @@ if check_password():
         st.title("📂 Navigation")
         page = st.radio("Aller vers :", ["RNM IMMO", "COMPTA", "RO 2026", "Réservations", "Détail 014", "Détail 119"])
         st.divider()
-        st.metric("Trésorerie Totale", f"{total_treso_dynamique:,.2f} €")
         
         if page in ["Détail 014", "Détail 119"]:
             st.divider()
