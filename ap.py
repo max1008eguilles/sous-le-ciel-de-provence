@@ -183,7 +183,7 @@ if check_password():
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
 
-    # --- PAGE RÉSERVATIONS ---
+   # --- PAGE RÉSERVATIONS (FIX FORMAT MAIL) ---
     elif page == "Réservations":
         st.title("📅 Gestion des Réservations")
         df_resa["Code Résidence"] = df_resa["Code Résidence"].fillna("").astype(str)
@@ -199,6 +199,7 @@ if check_password():
                 "Appartement": st.column_config.SelectboxColumn("Appartement", options=["014", "119"]),
                 "Montant": st.column_config.NumberColumn("Montant", format="%.2f €"),
                 "Numéro tel": st.column_config.TextColumn("Numéro tel"),
+                "Mail": st.column_config.TextColumn("Mail"), # Fix ici : format texte libre pour le mail
                 "Code Autre": st.column_config.TextColumn("Code Autre", disabled=True)
             }
         )
@@ -216,6 +217,7 @@ if check_password():
                 evts.append({"title": f"[{apt}] {r['Prénom_Nom']}", "start": str(r["Date Arrivée"]), "end": str(r["Date Départ"]), "color": color, "allDay": True})
         
         calendar(events=evts, options={"initialView": "dayGridMonth", "locale": "fr"})
+        
 
     elif page == "RO 2026": st.title("📈 RO 2026")
     elif page in ["Détail 014", "Détail 119"]: st.title(f"🏠 {page}")
