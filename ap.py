@@ -103,7 +103,7 @@ if check_password():
             st.rerun()
         st.divider()
         st.title("📂 Navigation")
-        page = st.radio("Aller vers :", ["RNM IMMO", "COMPTA", "Réservations", "RO 2026", "Détail 014", "Détail 119"])
+        page = st.radio("Aller vers :", ["RNM IMMO", "COMPTA", "Réservations", "RO 2026", "Détail 014", "Détail 119", "Ménages"])
         
         if page in ["Détail 014", "Détail 119"]:
             st.divider()
