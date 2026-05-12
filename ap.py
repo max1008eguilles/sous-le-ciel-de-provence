@@ -655,3 +655,97 @@ if check_password():
         c5.metric("OBJECTIF", f"{objectif_annuel_rnm:,.2f} €")
         perc_realisation = (ca_total_an / objectif_annuel_rnm * 100) if objectif_annuel_rnm > 0 else 0
         c6.metric("% OBJECTIF", f"{perc_realisation:.1f}%")
+
+
+    # --- PAGE RÉCAPITULATIF MÉNAGES ---
+    elif page == "Ménages":
+        st.title("🧹 Récapitulatif des Ménages")
+        
+        # Configuration du prix par ménage (à adapter selon vos tarifs)
+        PRIX_MENAGE = 40.0 
+        
+        # Fichier pour mémoriser les paiements effectués
+        PAIEMENTS_FILE = "statut_paiements_menages.csv"
+        
+        # 1. Charger l'historique des paiements
+        if os.path.exists(PAIEMENTS_FILE):
+            df_paye = pd.read_csv(PAIEMENTS_FILE)
+            dict_paye = dict(zip(df_paye["Clef"], df_paye["Payé"].astype(bool)))
+        else:
+            dict_paye = {}
+
+        # 2. Collecter tous les ménages cochés dans les pages Détails
+        all_menages = []
+        fichiers_appart = {
+            "Studio 014": "menages_manuels_014.csv",
+            "Studio 119": "menages_manuels_119.csv"
+        }
+
+        for appart, file in fichiers_appart.items():
+            if os.path.exists(file):
+                df_m = pd.read_csv(file)
+                # On ne garde que les lignes où le ménage est coché (Etat == True)
+                df_m_checked = df_m[df_m["Etat"] == True].copy()
+                for _, row in df_m_checked.iterrows():
+                    d = datetime.strptime(row["Date"], "%Y-%m-%d").date()
+                    # On crée une clef unique pour le suivi du paiement
+                    clef = f"{appart}_{row['Date']}"
+                    all_menages.append({
+                        "Clef": clef,
+                        "Date": d,
+                        "Appartement": appart,
+                        "Statut": "Passé" if d < date.today() else "À venir",
+                        "Payé": dict_paye.get(clef, False)
+                    })
+
+        if not all_menages:
+            st.info("Aucun ménage n'a été coché dans les fiches détails pour le moment.")
+        else:
+            df_total = pd.DataFrame(all_menages).sort_values(by="Date", ascending=False)
+
+            # 3. Calculs des montants
+            # Un ménage est "Dû" s'il est Passé ET non Payé
+            df_du = df_total[(df_total["Statut"] == "Passé") & (df_total["Payé"] == False)]
+            montant_total_du = len(df_du) * PRIX_MENAGE
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Ménages à régler", f"{len(df_du)}")
+            c2.metric("Montant dû", f"{montant_total_du:,.2f} €", delta_color="inverse")
+            c3.info(f"Tarif appliqué : {PRIX_MENAGE}€ / ménage")
+
+            st.divider()
+
+            # 4. Tableau interactif pour marquer comme payé
+            st.subheader("📝 Liste des prestations")
+            
+            # On formate pour l'affichage
+            df_display = df_total.copy()
+            df_display["Date"] = df_display["Date"].apply(lambda x: x.strftime("%d/%m/%Y"))
+            
+            # Style pour identifier les lignes à payer
+            def color_paye(row):
+                if row["Statut"] == "Passé" and not row["Payé"]:
+                    return ['background-color: #ffcccc; color: black'] * len(row) # Rouge si dû
+                if row["Payé"]:
+                    return ['background-color: #e6ffed; color: black'] * len(row) # Vert si payé
+                return [''] * len(row)
+
+            edited_paye = st.data_editor(
+                df_display.style.apply(color_paye, axis=1),
+                use_container_width=True,
+                hide_index=True,
+                disabled=["Clef", "Date", "Appartement", "Statut"],
+                column_config={
+                    "Clef": None, # On cache la clef technique
+                    "Payé": st.column_config.CheckboxColumn("Réglé ?")
+                }
+            )
+
+            if st.button("💾 Enregistrer les règlements"):
+                save_paye = pd.DataFrame({
+                    "Clef": edited_paye["Clef"],
+                    "Payé": edited_paye["Payé"]
+                })
+                save_paye.to_csv(PAIEMENTS_FILE, index=False)
+                st.success("Statuts de paiement mis à jour !")
+                st.rerun()
