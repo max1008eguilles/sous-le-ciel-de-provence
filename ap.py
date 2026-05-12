@@ -199,127 +199,103 @@ if check_password():
         st.title("📅 Gestion & Envois")
 
         if os.path.exists(RESA_FILE):
-            df_resa = pd.read_csv(RESA_FILE, dtype=str)
+            # Chargement propre
+            df_resa = pd.read_csv(RESA_FILE, dtype=str).fillna("")
             
-            # Initialisation de la colonne de suivi si absente
-            if "Guide Envoyé" not in df_resa.columns:
-                df_resa["Guide Envoyé"] = "Non"
-            
-            # Suppression de la colonne "Envoyer Guide" qui ne sert à rien
+            # Nettoyage des colonnes inutiles
             if "Envoyer Guide" in df_resa.columns:
                 df_resa = df_resa.drop(columns=["Envoyer Guide"])
 
-            # --- 1. ENVOI RAPIDE (ARRIVÉES DU JOUR) ---
-            st.subheader("🚀 Arrivées du jour")
+            # --- 1. ARRIVÉES DU JOUR (ENVOI RAPIDE) ---
             from datetime import timedelta
             date_paris = (datetime.utcnow() + timedelta(hours=2)).strftime("%Y-%m-%d")
-            df_jour = df_resa[df_resa["Date Arrivée"] == date_paris].copy()
-
-            if df_jour.empty:
-                st.info(f"Aucune arrivée prévue aujourd'hui ({date_paris}).")
-            else:
-                client_a_envoyer = st.selectbox("Sélectionner le client du jour :", df_jour['Prénom_Nom'].unique())
-                
-                status_actuel = df_resa.loc[df_resa['Prénom_Nom'] == client_a_envoyer, "Guide Envoyé"].values[0]
-                if status_actuel == "Oui":
-                    st.warning("⚠️ Guide déjà envoyé.")
-
-                if st.button("📤 Envoyer le guide au client sélectionné"):
-                    resa_sel = df_jour[df_jour['Prénom_Nom'] == client_a_envoyer].iloc[0]
-                    appart = str(resa_sel.get('Appartement', ''))
-
-                    if "14" in appart or "014" in appart:
-                        webhook_url = "https://hook.eu2.make.com/7v3yap243qgcxbu8pc539owwgrvr32qt"
-                        payload = {
-                            "Nom": str(resa_sel['Prénom_Nom']),
-                            "Date_arrivée": str(resa_sel['Date Arrivée']),
-                            "Date_départ": str(resa_sel.get('Date Départ', '')),
-                            "Code_studio": str(resa_sel.get('Code Studio', '')),
-                            "Code_résidence": str(resa_sel.get('Code Résidence', '')),
-                            "Code_autre": str(resa_sel.get('Code Autre', '')),
-                            "Mail": str(resa_sel.get('Mail', ''))
-                        }
-                        try:
-                            r = requests.post(webhook_url, json=payload)
-                            if r.status_code == 200:
-                                df_resa.loc[df_resa['Prénom_Nom'] == client_a_envoyer, "Guide Envoyé"] = "Oui"
-                                df_resa.to_csv(RESA_FILE, index=False)
-                                st.success(f"✅ Envoyé !")
-                                st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ Erreur : {e}")
+            # ... (garde ton code d'envoi webhook ici, il fonctionne bien) ...
 
             st.divider()
 
-           # --- 2. TOUTES LES RÉSERVATIONS (TABLEAU DE GESTION) ---
+            # --- 2. TOUTES LES RÉSERVATIONS ---
             st.subheader("📝 Toutes les réservations")
             
+            # Préparation du tableau : Plus récent en haut
+            df_display = df_resa.sort_values(by="Date Arrivée", ascending=False)
+
+            # ASTUCE LIGNE VIDE EN HAUT : On crée une ligne vide et on l'ajoute au début
+            empty_row = pd.DataFrame([{col: "" for col in df_display.columns}])
+            empty_row["Guide Envoyé"] = "Non"
+            df_with_add = pd.concat([empty_row, df_display], ignore_index=True)
+
+            # Barre de recherche
             search_query = st.text_input("🔍 Rechercher un client ou un numéro :", "")
-            
-            # --- ASTUCE POUR LA LIGNE VIDE EN HAUT ---
-            # On trie par date croissante (Ancien -> Récent) 
-            # Comme ça la ligne vide d'ajout (+) de Streamlit se retrouve en bas,
-            # MAIS on va demander à Streamlit d'afficher le tableau à l'envers visuellement.
-            df_display = df_resa.sort_values(by="Date Arrivée", ascending=True)
-            
             if search_query:
                 q = search_query.lower()
-                df_display = df_display[
-                    df_display['Prénom_Nom'].str.lower().str.contains(q, na=False) | 
-                    df_display['Numéro tel'].str.contains(q, na=False)
+                df_with_add = df_with_add[
+                    df_with_add['Prénom_Nom'].str.lower().str.contains(q, na=False) | 
+                    df_with_add['Numéro tel'].str.contains(q, na=False)
                 ]
 
-            # Configuration des colonnes (Valeur par défaut "Non")
+            # Configuration pour "Non" par défaut
             column_config = {
                 "Guide Envoyé": st.column_config.SelectboxColumn(
-                    "Guide Envoyé",
                     options=["Non", "Oui"],
                     default="Non"
                 )
             }
 
-            # On utilise le data_editor standard (SANS le .style qui casse tout)
-            # Pour la couleur, Streamlit ne permet pas encore de colorer une ligne 
-            # ET de garder l'édition active en même temps. On privilégie donc l'édition.
+            # Affichage du tableau (Note: La couleur de ligne dynamique empêche l'édition dans Streamlit)
+            # On privilégie l'ajout en haut et la stabilité
             edited_resa = st.data_editor(
-                df_display, 
+                df_with_add, 
                 num_rows="dynamic", 
                 use_container_width=True, 
-                key="editor_full_list",
+                key="editor_final",
                 column_config=column_config
             )
 
             if st.button("💾 SAUVEGARDER LES MODIFICATIONS"):
-                # On s'assure que les nouvelles lignes ont bien "Non" par défaut si vide
-                if "Guide Envoyé" in edited_resa.columns:
-                    edited_resa["Guide Envoyé"] = edited_resa["Guide Envoyé"].fillna("Non")
+                # Nettoyage des lignes totalement vides (celles créées par erreur en haut)
+                df_to_save = edited_resa[edited_resa['Prénom_Nom'] != ""]
                 
-                # Logique automatique du Code Autre
-                def clean_code(row):
+                # Logique Code Autre (Code Résidence sans dernier caractère)
+                def auto_code(row):
                     cr = str(row.get('Code Résidence', ''))
-                    if cr and cr != 'nan' and cr != '':
+                    if cr and len(cr) > 1:
                         return cr[:-1]
                     return row.get('Code Autre', '')
-
-                edited_resa['Code Autre'] = edited_resa.apply(clean_code, axis=1)
                 
-                # Sauvegarde (on remet les plus récents en haut pour le fichier)
-                df_final = edited_resa.sort_values(by="Date Arrivée", ascending=False)
-                df_final.to_csv(RESA_FILE, index=False)
-                st.success("Données sauvegardées !")
+                df_to_save['Code Autre'] = df_to_save.apply(auto_code, axis=1)
+                df_to_save['Guide Envoyé'] = df_to_save['Guide Envoyé'].replace("", "Non")
+                
+                # Tri final et sauvegarde
+                df_to_save = df_to_save.sort_values(by="Date Arrivée", ascending=False)
+                df_to_save.to_csv(RESA_FILE, index=False)
+                st.success("Données enregistrées et triées (Plus récentes en haut) !")
                 st.rerun()
 
-            # --- 3. CALENDRIER EN BAS ---
+            st.divider()
+
+            # --- 3. CALENDRIER (EN BAS) ---
             st.subheader("🗓️ Vue Calendrier")
             calendar_events = []
             for _, row in df_resa.iterrows():
-                calendar_events.append({
-                    "title": f"{row['Prénom_Nom']} ({row['Appartement']})",
-                    "start": row['Date Arrivée'],
-                    "end": row['Date Départ'],
-                    "color": "#FF4B4B" if "14" in str(row['Appartement']) else "#1C83E1"
-                })
-            calendar(events=calendar_events, options={"initialView": "dayGridMonth"}, key="calendar_footer")
+                if row['Date Arrivée'] and row['Date Départ']:
+                    calendar_events.append({
+                        "title": f"{row['Prénom_Nom']} ({row['Appartement']})",
+                        "start": row['Date Arrivée'],
+                        "end": row['Date Départ'],
+                        "color": "#FF4B4B" if "14" in str(row['Appartement']) else "#1C83E1"
+                    })
+            
+            # Ajout d'un événement discret pour "Aujourd'hui" en bleu clair dans le calendrier
+            calendar_events.append({
+                "title": "AUJOURD'HUI",
+                "start": date_paris,
+                "allDay": True,
+                "display": "background",
+                "color": "#D1E8FF" # Bleu clair
+            })
+
+            calendar(events=calendar_events, options={"initialView": "dayGridMonth"}, key="cal_footer")
+            
     # --- PAGE DÉTAIL 014 ---
     elif page == "Détail 014":
         st.title("🏠 Détail Studio 014")
