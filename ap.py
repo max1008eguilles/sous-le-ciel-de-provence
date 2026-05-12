@@ -195,7 +195,6 @@ if check_password():
                 st.rerun()
 
 # --- PAGE RÉSERVATIONS ---
-   # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
         st.title("📅 Gestion & Envois")
 
@@ -206,27 +205,10 @@ if check_password():
             if "Guide Envoyé" not in df_resa.columns:
                 df_resa["Guide Envoyé"] = "Non"
 
-            # --- 1. TON CALENDRIER (TEL QU'IL ÉTAIT) ---
-            calendar_events = []
-            for _, row in df_resa.iterrows():
-                calendar_events.append({
-                    "title": f"{row['Prénom_Nom']} ({row['Appartement']})",
-                    "start": row['Date Arrivée'],
-                    "end": row['Date Départ'],
-                    "color": "#FF4B4B" if "14" in str(row['Appartement']) else "#1C83E1"
-                })
-
-            calendar_options = {
-                "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth,timeGridWeek"},
-                "initialView": "dayGridMonth",
-            }
-            calendar(events=calendar_events, options=calendar_options, key="calendar_resa")
-
-            st.divider()
-
-            # --- 2. ENVOI RAPIDE (ARRIVÉES DU JOUR) ---
+            # --- 1. ENVOI RAPIDE (ARRIVÉES DU JOUR) ---
             st.subheader("🚀 Arrivées du jour")
             from datetime import timedelta
+            # Calcul de la date du jour à Paris
             date_paris = (datetime.utcnow() + timedelta(hours=2)).strftime("%Y-%m-%d")
             df_jour = df_resa[df_resa["Date Arrivée"] == date_paris].copy()
 
@@ -235,10 +217,10 @@ if check_password():
             else:
                 client_a_envoyer = st.selectbox("Sélectionner le client du jour :", df_jour['Prénom_Nom'].unique())
                 
-                # Alerte si déjà envoyé
+                # Vérification si déjà envoyé
                 status_actuel = df_resa.loc[df_resa['Prénom_Nom'] == client_a_envoyer, "Guide Envoyé"].values[0]
                 if status_actuel == "Oui":
-                    st.warning("⚠️ Guide déjà envoyé pour ce client.")
+                    st.warning("⚠️ Guide déjà marqué comme envoyé pour ce client.")
 
                 if st.button("📤 Envoyer le guide au client sélectionné"):
                     resa_sel = df_jour[df_jour['Prénom_Nom'] == client_a_envoyer].iloc[0]
@@ -258,25 +240,26 @@ if check_password():
                         try:
                             r = requests.post(webhook_url, json=payload)
                             if r.status_code == 200:
+                                # On marque comme envoyé dans le DF principal
                                 df_resa.loc[df_resa['Prénom_Nom'] == client_a_envoyer, "Guide Envoyé"] = "Oui"
                                 df_resa.to_csv(RESA_FILE, index=False)
                                 st.success(f"✅ Envoyé à {resa_sel['Prénom_Nom']} !")
                                 st.rerun()
                             else:
-                                st.error("❌ Erreur Make.")
+                                st.error("❌ Erreur de réponse du serveur (Make).")
                         except Exception as e:
-                            st.error(f"❌ Erreur : {e}")
+                            st.error(f"❌ Erreur lors de l'envoi : {e}")
                     elif "119" in appart:
-                        st.warning("⚠️ Stop : Client au 119.")
+                        st.warning("⚠️ Action stoppée : Le client est au 119. Pas d'envoi automatique pour cet appartement.")
 
             st.divider()
 
-            # --- 3. TOUTES LES RÉSERVATIONS (TRIÉES ET RECHERCHABLES) ---
+            # --- 2. TOUTES LES RÉSERVATIONS (TABLEAU DE GESTION) ---
             st.subheader("📝 Toutes les réservations")
             
             search_query = st.text_input("🔍 Rechercher un client ou un numéro :", "")
             
-            # On trie pour avoir les plus récents en haut pour le confort
+            # Tri par date la plus récente en haut
             df_display = df_resa.sort_values(by="Date Arrivée", ascending=False)
             
             if search_query:
@@ -290,8 +273,27 @@ if check_password():
 
             if st.button("💾 SAUVEGARDER LES MODIFICATIONS"):
                 edited_resa.to_csv(RESA_FILE, index=False)
-                st.success("Enregistré !")
+                st.success("Base de données mise à jour !")
                 st.rerun()
+
+            st.divider()
+
+            # --- 3. LE CALENDRIER (EN BAS DE PAGE) ---
+            st.subheader("🗓️ Vue Calendrier")
+            calendar_events = []
+            for _, row in df_resa.iterrows():
+                calendar_events.append({
+                    "title": f"{row['Prénom_Nom']} ({row['Appartement']})",
+                    "start": row['Date Arrivée'],
+                    "end": row['Date Départ'],
+                    "color": "#FF4B4B" if "14" in str(row['Appartement']) else "#1C83E1"
+                })
+
+            calendar_options = {
+                "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth,timeGridWeek"},
+                "initialView": "dayGridMonth",
+            }
+            calendar(events=calendar_events, options=calendar_options, key="calendar_resa_footer")
                 
     # --- PAGE DÉTAIL 014 ---
     elif page == "Détail 014":
