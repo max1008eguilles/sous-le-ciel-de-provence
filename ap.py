@@ -323,24 +323,25 @@ if check_password():
         
         # --- LOGIQUE MÉNAGES ---
         MENAGE_014_FILE = "menages_manuels_014.csv"
-        
-        # On charge l'état enregistré des ménages
-        if os.path.exists(MENAGE_014_FILE):
-            df_m_save = pd.read_csv(MENAGE_014_FILE)
-            # On stocke sous forme de dictionnaire {date: bool} pour un accès rapide
-            dict_menages = dict(zip(df_m_save["Date"], df_m_save["Etat"].astype(bool)))
-            has_history = True
-        else:
-            dict_menages = {}
-            has_history = False
+        dict_menages = {}
+        has_history = False
 
-        # --- CONFIGURATION OBJECTIFS (Expander) ---
+        if os.path.exists(MENAGE_014_FILE):
+            try:
+                df_m_save = pd.read_csv(MENAGE_014_FILE)
+                if "Etat" in df_m_save.columns:
+                    dict_menages = dict(zip(df_m_save["Date"], df_m_save["Etat"].astype(bool)))
+                    has_history = True
+            except Exception:
+                pass # Sécurité si le fichier est corrompu
+
+        # --- OBJECTIFS (Expander) ---
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
         df_obj_year = df_obj_all[df_obj_all["Année"] == sel_year].copy()
         if df_obj_year.empty:
             df_obj_year = pd.DataFrame({"Année": [sel_year]*12, "Mois": mois_noms, "Objectif": [1250.0]*12})
         
-        with st.expander(f"🎯 Configurer les Objectifs"):
+        with st.expander("🎯 Configurer les Objectifs"):
             edited_obj = st.data_editor(df_obj_year, use_container_width=True, hide_index=True,
                 column_config={"Année": None, "Mois": st.column_config.TextColumn(disabled=True), "Objectif": st.column_config.NumberColumn("Objectif (€)", format="%.2f €")})
             if st.button("💾 Sauvegarder Objectifs"):
@@ -350,7 +351,7 @@ if check_password():
         
         st.divider()
 
-        # --- CALCUL DES DONNÉES DU MOIS ---
+        # --- CALCUL DES DONNÉES ---
         first_day = date(sel_year, sel_month, 1)
         last_day = (date(sel_year, sel_month % 12 + 1, 1) - timedelta(days=1)) if sel_month < 12 else date(sel_year, 12, 31)
         days_list = [first_day + timedelta(days=i) for i in range((last_day - first_day).days + 1)]
@@ -370,7 +371,6 @@ if check_password():
                             month_data[curr]["montant"] = prix_par_nuit
                             month_data[curr]["client"] = r["Prénom_Nom"]
                         curr += timedelta(days=1)
-                    # Détection automatique de la fin de résa
                     if d_dep in month_data:
                         month_data[d_dep]["auto_menage"] = True
 
@@ -382,25 +382,21 @@ if check_password():
         m1, m2, m3, m4, m5, m6 = st.columns(6)
         m1.metric("Réalisé Mois", f"{real_m:,.2f} €")
         m2.metric("Objectif", f"{obj_m_val:,.2f} €")
-        m3.metric("%", f"{(real_m/obj_m_val*100 if obj_m_val>0 else 0):|1f}%")
+        m3.metric("%", f"{(real_m/obj_m_val*100 if obj_m_val>0 else 0):.1f}%")
         m4.metric("Nuits", f"{nuits} j")
         m5.metric("Prix Moy.", f"{(real_m/nuits if nuits > 0 else 0):,.2f} €")
         m6.metric("% Occ.", f"{(nuits/len(days_list)*100):.1f}%")
 
         st.divider()
 
-        # --- LE TABLEAU UNIQUE ---
+        # --- TABLEAU UNIQUE INTERACTIF ---
         st.subheader("📋 Suivi Détaillé & Ménages")
         
         rows = []
         for d, v in month_data.items():
             d_str = str(d)
-            # Logique : Si on a déjà enregistré, on prend la valeur du fichier.
-            # Sinon, on prend la valeur automatique de fin de résa.
-            if has_history:
-                is_checked = dict_menages.get(d_str, False)
-            else:
-                is_checked = v["auto_menage"]
+            # Priorité à l'historique enregistré, sinon détection auto
+            is_checked = dict_menages.get(d_str, v["auto_menage"]) if has_history else v["auto_menage"]
                 
             rows.append({
                 "Date_Full": d_str,
@@ -410,14 +406,17 @@ if check_password():
                 "Ménage": is_checked
             })
         
-        df_final = pd.DataFrame(rows)
+        df_display = pd.DataFrame(rows)
 
-        # Style visuel (Ligne verte si coché)
-        def highlight_menage(row):
-            return ['background-color: #2E8B57; color: white'] * len(row) if row["Ménage"] else [''] * len(row)
+        # Style pour le vert (appliqué uniquement sur l'affichage)
+        def style_rows(row):
+            if row["Ménage"]:
+                return ['background-color: #2E8B57; color: white'] * len(row)
+            return [''] * len(row)
 
+        # L'éditeur de données
         edited_df = st.data_editor(
-            df_final.style.apply(highlight_menage, axis=1),
+            df_display.style.apply(style_rows, axis=1),
             use_container_width=True,
             hide_index=True,
             disabled=["Date", "Montant", "Client"],
@@ -425,17 +424,17 @@ if check_password():
                 "Date_Full": None,
                 "Ménage": st.column_config.CheckboxColumn("Ménage ?", default=False)
             },
-            key="editor_unique_014"
+            key="unique_editor_014"
         )
 
-        if st.button("💾 Enregistrer les modifications"):
-            # On enregistre l'état de CHAQUE ligne (pour mémoriser les décochés)
-            save_data = pd.DataFrame({
+        if st.button("💾 Enregistrer le planning"):
+            # On sauvegarde l'état actuel pour toutes les dates du mois
+            save_df = pd.DataFrame({
                 "Date": edited_df["Date_Full"],
                 "Etat": edited_df["Ménage"]
             })
-            save_data.to_csv(MENAGE_014_FILE, index=False)
-            st.success("Planning et préférences enregistrés !")
+            save_df.to_csv(MENAGE_014_FILE, index=False)
+            st.success("Modifications enregistrées !")
             st.rerun()
             
     # --- PAGE DÉTAIL 119 ---
