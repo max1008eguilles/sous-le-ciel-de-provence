@@ -150,12 +150,13 @@ if check_password():
   # --- PAGE COMPTA ---
     elif page == "COMPTA":
         st.title("💰 Comptabilité Partagée")
+        
+        # 1. GESTION DES COLONNES (Évite l'erreur ValueError)
+        for col in ["Justificatif", "Pointé"]:
+            if col not in df_compta.columns:
+                df_compta[col] = ""
 
-        # Initialisation de la colonne si absente
-        if "Justificatif" not in df_compta.columns:
-            df_compta["Justificatif"] = ""
-
-        # ... (Gardez vos metrics et analyse financière ici) ...
+        # ... (Metrics CIC / Cash / Total inchangés) ...
 
         st.divider()
         col_add, col_list = st.columns([1, 2])
@@ -166,44 +167,42 @@ if check_password():
                 d = st.date_input("Date", date.today())
                 t = st.selectbox("Type", ["Revenu", "Dépense", "Crédit", "Apport", "Remboursement CCA"])
                 cpt = st.selectbox("Compte", ["CIC", "Cash"])
-                m = st.number_input("Montant", format="%.2f")
+                m = st.number_input("Montant", format="%.2f") # Autorise le négatif
                 txt = st.text_input("Commentaire")
-                uploaded_file = st.file_uploader("Justificatif", type=["pdf", "png", "jpg", "jpeg"])
+                
+                # Upload du fichier
+                up_file = st.file_uploader("Justificatif", type=["pdf", "png", "jpg", "jpeg"])
                 
                 if st.form_submit_button("Valider"):
-                    drive_link = ""
-                    if uploaded_file is not None:
-                        # --- LOGIQUE CLOUD ---
-                        # On télécharge temporairement et on envoie sur Google Drive
-                        with open(uploaded_file.name, "wb") as f:
-                            f.write(uploaded_file.getbuffer())
-                        
-                        # Ici, on utilise l'outil de stockage Cloud 
-                        # (Le dashboard enverra le fichier vers le dossier partagé)
-                        st.info("⏳ Upload vers Google Drive en cours...")
-                        # Simulation du lien généré par le Drive
-                        drive_link = f"https://drive.google.com/file/..." 
-                        
-                    new_row = pd.DataFrame([{
-                        "Date": str(d), "Type": t, "Compte": cpt, "Montant": m,
-                        "Commentaire": txt, "Pointé": False, "Justificatif": drive_link
+                    path_cloud = ""
+                    if up_file:
+                        # Sauvegarde locale (accessible par tous si dashboard en ligne sur Streamlit Cloud)
+                        if not os.path.exists("justificatifs"): os.makedirs("justificatifs")
+                        fname = f"{d}_{m}_{up_file.name}".replace(" ", "_")
+                        path_cloud = os.path.join("justificatifs", fname)
+                        with open(path_cloud, "wb") as f:
+                            f.write(up_file.getbuffer())
+                    
+                    new_line = pd.DataFrame([{
+                        "Date": str(d), "Type": t, "Compte": cpt, 
+                        "Montant": m, "Commentaire": txt, 
+                        "Pointé": "Non", "Justificatif": path_cloud
                     }])
                     
-                    df_updated = pd.concat([df_compta, new_row], ignore_index=True)
-                    df_updated.to_csv(COMPTA_FILE, index=False)
-                    st.success("✅ Enregistré sur le Cloud !")
+                    pd.concat([df_compta, new_line], ignore_index=True).to_csv(COMPTA_FILE, index=False)
+                    st.success("Enregistré !")
                     st.rerun()
                     
         with col_list:
-            st.subheader("📝 Journal Partagé")
-            df_display = df_compta.sort_values(by="Date", ascending=False)
+            st.subheader("📝 Journal (Plus récents en haut)")
+            # TRI : Plus récent en haut
+            df_display = df_compta.sort_values(by="Date", ascending=False).copy()
             
-            # Configuration pour que le lien ouvre le fichier Drive
+            # 2. CONFIGURATION DES COLONNES (Évite StreamlitAPIException)
+            # On utilise TextColumn car LinkColumn peut bugger si le chemin n'est pas une URL HTTP
             column_config = {
-                "Justificatif": st.column_config.LinkColumn(
-                    "📄 Justif",
-                    display_text="Voir le fichier (Drive)"
-                )
+                "Justificatif": st.column_config.TextColumn("📄 Fichier", help="Chemin du justificatif"),
+                "Pointé": st.column_config.SelectboxColumn("✅ Check", options=["Non", "Oui"])
             }
 
             ed_c = st.data_editor(
@@ -213,9 +212,24 @@ if check_password():
                 column_config=column_config
             )
 
-            if st.button("💾 Sauvegarder"):
+            if st.button("💾 Sauvegarder Compta"):
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
+
+            # --- 3. ACCÈS MULTI-APPAREILS AUX FICHIERS ---
+            st.divider()
+            st.subheader("🔍 Consulter un justificatif")
+            files_available = [f for f in df_compta["Justificatif"].unique() if f and str(f) != "nan" and str(f) != "False"]
+            
+            sel_file = st.selectbox("Choisir un fichier à ouvrir :", files_available)
+            if sel_file and os.path.exists(sel_file):
+                with open(sel_file, "rb") as f:
+                    btn = st.download_button(
+                        label="📥 Télécharger / Voir le justificatif",
+                        data=f,
+                        file_name=os.path.basename(sel_file),
+                        mime="application/octet-stream"
+                    )
                 
 # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
