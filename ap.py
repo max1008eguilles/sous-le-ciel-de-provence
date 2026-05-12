@@ -136,7 +136,7 @@ if check_password():
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Patrimoine Brut", f"{total_brut:,.0f} €")
         m2.metric("Dette Bancaire", f"{total_crd:,.0f} €")
-        m3.metric("Cash disponible", f"{total_treso_dynamique:,.2f} €")
+        m3.metric("Cash disponible", f"{total_treso_dynamique:,.0f} €")
         m4.metric("Patrimoine Net", f"{total_net:,.0f} €")
         st.divider()
         edited_df = st.data_editor(df_cfg, num_rows="dynamic", use_container_width=True)
