@@ -165,17 +165,35 @@ if check_password():
             recap_y = df_calc.groupby(['Année', 'Type'])['Montant'].sum().unstack(fill_value=0)
             recap_m = df_calc.groupby(['Mois', 'Type', 'Année'])['Montant'].sum().unstack(level=1, fill_value=0)
             
-            for col in ["Revenu", "Dépense", "Crédit"]:
+            # On s'assure que toutes les colonnes existent pour éviter les erreurs de calcul
+            for col in ["Revenu", "Dépense", "Crédit", "Apport", "Remboursement CCA"]:
                 if col not in recap_y.columns: recap_y[col] = 0.0
                 if col not in recap_m.columns: recap_m[col] = 0.0
             
             final_rows = []
             for a in sorted(df_calc['Année'].unique(), reverse=True):
                 val_y = recap_y.loc[a]
-                final_rows.append({"Période": f"TOTAL {a}", "Revenus": val_y["Revenu"], "Charges": val_y["Dépense"], "Crédit": val_y["Crédit"], "Cash Flow": val_y["Revenu"]-val_y["Dépense"]-val_y["Crédit"]})
+                # LE CASH FLOW ne compte QUE Revenu - Dépense - Crédit (L'apport et le CCA sont exclus)
+                cash_flow_y = val_y["Revenu"] - val_y["Dépense"] - val_y["Crédit"]
+                
+                final_rows.append({
+                    "Période": f"TOTAL {a}", 
+                    "Revenus": val_y["Revenu"], 
+                    "Charges": val_y["Dépense"], 
+                    "Crédit": val_y["Crédit"], 
+                    "Cash Flow": cash_flow_y
+                })
+                
                 mes_mois = recap_m.xs(a, level='Année').sort_index(ascending=False)
                 for m, val_m in mes_mois.iterrows():
-                    final_rows.append({"Période": m, "Revenus": val_m["Revenu"], "Charges": val_m["Dépense"], "Crédit": val_m["Crédit"], "Cash Flow": val_m["Revenu"]-val_m["Dépense"]-val_m["Crédit"]})
+                    cash_flow_m = val_m["Revenu"] - val_m["Dépense"] - val_m["Crédit"]
+                    final_rows.append({
+                        "Période": m, 
+                        "Revenus": val_m["Revenu"], 
+                        "Charges": val_m["Dépense"], 
+                        "Crédit": val_m["Crédit"], 
+                        "Cash Flow": cash_flow_m
+                    })
             
             st.table(pd.DataFrame(final_rows).style.format("{:,.2f} €", subset=["Revenus", "Charges", "Crédit", "Cash Flow"]))
         
@@ -186,10 +204,11 @@ if check_password():
             st.subheader("➕ Ajouter")
             with st.form("f_compta", clear_on_submit=True):
                 d = st.date_input("Date", date.today())
-                t = st.selectbox("Type", ["Revenu", "Dépense", "Crédit"])
+                # AJOUT DES TYPES : Apport et Remboursement CCA
+                t = st.selectbox("Type", ["Revenu", "Dépense", "Crédit", "Apport", "Remboursement CCA"])
                 cpt = st.selectbox("Compte", ["CIC", "Cash"])
                 
-                # MODIFICATION ICI : On enlève min_value=0.0 pour autoriser les dépenses négatives
+                # Montant (autorise le négatif si besoin de correction)
                 m = st.number_input("Montant", format="%.2f")
                 
                 txt = st.text_input("Commentaire")
@@ -203,7 +222,6 @@ if check_password():
             ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True)
             if st.button("💾 Sauvegarder Compta"):
                 ed_c.to_csv(COMPTA_FILE, index=False)
-                st.rerun()
                 st.rerun()
 # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
