@@ -147,9 +147,15 @@ if check_password():
                     fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net Bien'] + (row['Capital Restant']/2), text=f"<b>{row['Capital Restant']:,.0f}€</b><br>{row['% Dette']:.1f}%", showarrow=False)
             st.plotly_chart(fig, use_container_width=True)
 
-   # --- PAGE COMPTA ---
+  # --- PAGE COMPTA ---
     elif page == "COMPTA":
         st.title("💰 Comptabilité - RNM IMMO")
+        
+        # Création du dossier justificatifs s'il n'existe pas
+        import os
+        if not os.path.exists("justificatifs"):
+            os.makedirs("justificatifs")
+
         c1, c2, c3 = st.columns(3)
         c1.metric("Montant CIC", f"{solde_cic:,.2f} €")
         c2.metric("Montant Cash", f"{solde_cash_physique:,.2f} €")
@@ -165,7 +171,6 @@ if check_password():
             recap_y = df_calc.groupby(['Année', 'Type'])['Montant'].sum().unstack(fill_value=0)
             recap_m = df_calc.groupby(['Mois', 'Type', 'Année'])['Montant'].sum().unstack(level=1, fill_value=0)
             
-            # On s'assure que toutes les colonnes existent pour éviter les erreurs de calcul
             for col in ["Revenu", "Dépense", "Crédit", "Apport", "Remboursement CCA"]:
                 if col not in recap_y.columns: recap_y[col] = 0.0
                 if col not in recap_m.columns: recap_m[col] = 0.0
@@ -173,27 +178,12 @@ if check_password():
             final_rows = []
             for a in sorted(df_calc['Année'].unique(), reverse=True):
                 val_y = recap_y.loc[a]
-                # LE CASH FLOW ne compte QUE Revenu - Dépense - Crédit (L'apport et le CCA sont exclus)
                 cash_flow_y = val_y["Revenu"] - val_y["Dépense"] - val_y["Crédit"]
-                
-                final_rows.append({
-                    "Période": f"TOTAL {a}", 
-                    "Revenus": val_y["Revenu"], 
-                    "Charges": val_y["Dépense"], 
-                    "Crédit": val_y["Crédit"], 
-                    "Cash Flow": cash_flow_y
-                })
-                
+                final_rows.append({"Période": f"TOTAL {a}", "Revenus": val_y["Revenu"], "Charges": val_y["Dépense"], "Crédit": val_y["Crédit"], "Cash Flow": cash_flow_y})
                 mes_mois = recap_m.xs(a, level='Année').sort_index(ascending=False)
                 for m, val_m in mes_mois.iterrows():
                     cash_flow_m = val_m["Revenu"] - val_m["Dépense"] - val_m["Crédit"]
-                    final_rows.append({
-                        "Période": m, 
-                        "Revenus": val_m["Revenu"], 
-                        "Charges": val_m["Dépense"], 
-                        "Crédit": val_m["Crédit"], 
-                        "Cash Flow": cash_flow_m
-                    })
+                    final_rows.append({"Période": m, "Revenus": val_m["Revenu"], "Charges": val_m["Dépense"], "Crédit": val_m["Crédit"], "Cash Flow": cash_flow_m})
             
             st.table(pd.DataFrame(final_rows).style.format("{:,.2f} €", subset=["Revenus", "Charges", "Crédit", "Cash Flow"]))
         
@@ -204,25 +194,39 @@ if check_password():
             st.subheader("➕ Ajouter")
             with st.form("f_compta", clear_on_submit=True):
                 d = st.date_input("Date", date.today())
-                # AJOUT DES TYPES : Apport et Remboursement CCA
                 t = st.selectbox("Type", ["Revenu", "Dépense", "Crédit", "Apport", "Remboursement CCA"])
                 cpt = st.selectbox("Compte", ["CIC", "Cash"])
-                
-                # Montant (autorise le négatif si besoin de correction)
                 m = st.number_input("Montant", format="%.2f")
-                
                 txt = st.text_input("Commentaire")
+                
+                # NOUVEAU : Champ pour le justificatif
+                uploaded_file = st.file_uploader("Justificatif (PDF, Image)", type=["pdf", "png", "jpg", "jpeg"])
+                
                 if st.form_submit_button("Valider"):
-                    new = pd.DataFrame([[d, t, cpt, m, txt, False]], columns=df_compta.columns)
+                    justif_path = ""
+                    if uploaded_file is not None:
+                        # Sauvegarde physique du fichier
+                        justif_path = f"justificatifs/{d}_{t}_{m}_{uploaded_file.name}"
+                        with open(justif_path, "wb") as f:
+                            f.write(uploaded_file.getbuffer())
+                    
+                    # Ajout de la colonne Justificatif si elle n'existe pas dans le CSV
+                    new = pd.DataFrame([[d, t, cpt, m, txt, False, justif_path]], columns=df_compta.columns)
                     pd.concat([df_compta, new], ignore_index=True).to_csv(COMPTA_FILE, index=False)
+                    st.success("Enregistré avec succès !")
                     st.rerun()
                     
         with col_list:
             st.subheader("📝 Journal")
-            ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True)
+            # TRI : On affiche les plus récents en haut
+            df_sorted = df_compta.sort_values(by="Date", ascending=False)
+            
+            ed_c = st.data_editor(df_sorted, num_rows="dynamic", use_container_width=True)
             if st.button("💾 Sauvegarder Compta"):
+                # On sauvegarde sans changer l'ordre original ou en gardant le nouveau tri
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
+                
 # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
         st.title("📅 Gestion & Envois")
