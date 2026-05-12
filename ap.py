@@ -701,7 +701,7 @@ if check_password():
         else:
             dict_paye = {}
 
-        # 2. Collecte de TOUTES les données cochées dans Studio 014 et 119
+        # 2. Collecte des données des studios
         all_data = []
         sources = {
             "Studio 014": "menages_manuels_014.csv", 
@@ -711,24 +711,15 @@ if check_password():
         for appt_name, file_path in sources.items():
             if os.path.exists(file_path):
                 df_src = pd.read_csv(file_path)
-                
-                # On identifie la colonne de la case à cocher (tolérance sur le nom)
-                col_etat = None
-                for c in ["Etat", "Ménage ?", "Ménage"]:
-                    if c in df_src.columns:
-                        col_etat = c
-                        break
+                col_etat = next((c for c in ["Etat", "Ménage ?", "Ménage"] if c in df_src.columns), None)
                 
                 if "Date" in df_src.columns and col_etat:
-                    # FILTRE CRUCIAL : On prend tout ce qui est coché True sans limite de mois
                     df_checked = df_src[df_src[col_etat] == True].copy()
-                    
                     for _, row in df_checked.iterrows():
                         d_str = str(row["Date"])
-                        clef = f"{appt_name}_{d_str}" # ID unique pour le suivi
+                        clef = f"{appt_name}_{d_str}"
                         try:
                             d_obj = pd.to_datetime(d_str).date()
-                            # On ne garde que l'année en cours
                             if d_obj.year == 2026:
                                 all_data.append({
                                     "Clef": clef,
@@ -739,16 +730,51 @@ if check_password():
                                 })
                         except: continue
 
-        # 3. Gestion des Frais de Courses
+        # 3. Récupération dynamique des CODES pour la femme de ménage
+        st.divider()
+        st.subheader("🔑 Codes d'Accès")
+        
+        # On s'assure que les dates de résa sont au bon format pour le filtre
+        temp_resa = df_resa.copy()
+        temp_resa['Date Arrivée'] = pd.to_datetime(temp_resa['Date Arrivée'], errors='coerce')
+
+        # -- Code Résidence (Mois en cours)
+        try:
+            today = date.today()
+            code_res_val = temp_resa[
+                (temp_resa['Date Arrivée'].dt.month == today.month) & 
+                (temp_resa['Date Arrivée'].dt.year == today.year) &
+                (temp_resa['Code Résidence'].str.strip() != "")
+            ].iloc[0]['Code Résidence']
+        except:
+            code_res_val = "Non défini"
+
+        # -- Code 119 (Prochaine résa)
+        try:
+            next_119 = temp_resa[
+                (temp_resa['Appartement'].astype(str) == "119") & 
+                (temp_resa['Date Arrivée'].dt.date >= today)
+            ].sort_values(by='Date Arrivée').iloc[0]
+            code_119_val = next_119['Code Studio']
+            date_119 = next_119['Date Arrivée'].strftime('%d/%m')
+        except:
+            code_119_val = "N/A"
+            date_119 = "-"
+
+        # Affichage des Box de codes
+        c_code1, c_code2, c_code3 = st.columns(3)
+        c_code1.info(f"**🏢 RÉSIDENCE** (Mai)\n\n# {code_res_val}")
+        c_code2.success(f"**🚪 STUDIO 014** (Fixe)\n\n# 178459")
+        c_code3.warning(f"**🔑 STUDIO 119** (dès le {date_119})\n\n# {code_119_val}")
+
+        # 4. Métriques Financières
         if os.path.exists(COURSES_FILE):
             try: montant_courses = pd.read_csv(COURSES_FILE)["montant"].iloc[0]
             except: montant_courses = 0.0
         else: montant_courses = 0.0
 
-        # 4. Calculs des compteurs
         if all_data:
             df_total = pd.DataFrame(all_data).drop_duplicates(subset=['Clef']).sort_values(by="Date", ascending=False)
-            # Le montant dû = Prestations passées ET non réglées
             df_du = df_total[(df_total["Statut"] == "Passé") & (df_total["Payé"] == False)]
             total_prestations = len(df_du) * PRIX_MENAGE_UNITAIRE
             total_global_du = total_prestations + montant_courses
@@ -757,62 +783,50 @@ if check_password():
             total_prestations = 0.0
             total_global_du = montant_courses
 
-        # --- INTERFACE UTILISATEUR ---
-        st.subheader("🛒 Frais de Courses")
-        new_montant = st.number_input("Montant cumulé des courses (€)", value=float(montant_courses), step=1.0)
-        if new_montant != montant_courses:
-            pd.DataFrame({"montant": [new_montant]}).to_csv(COURSES_FILE, index=False)
-            st.rerun()
-
         st.divider()
-        
-        # Affichage des métriques (identique à ton souhait)
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Ménages à régler", len(df_du))
-        c2.metric("Total Prestations", f"{total_prestations:.2f} €")
-        c3.metric("TOTAL GLOBAL DÛ", f"{total_global_du:.2f} €")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Ménages à régler", len(df_du))
+        m2.metric("Total Prestations", f"{total_prestations:.2f} €")
+        m3.metric("TOTAL GLOBAL DÛ", f"{total_global_du:.2f} €")
 
+        # 5. Frais de Courses
+        st.write("")
+        with st.expander("🛒 Gérer les frais de courses"):
+            new_montant = st.number_input("Cumul courses (€)", value=float(montant_courses), step=1.0)
+            if st.button("Enregistrer Montant Courses"):
+                pd.DataFrame({"montant": [new_montant]}).to_csv(COURSES_FILE, index=False)
+                st.rerun()
+
+        # 6. Historique
         st.divider()
-        st.subheader("📋 Historique Global (Toutes les dates cochées)")
+        st.subheader("📋 Historique des passages")
 
-        # Logique de coloration des lignes
         def style_rows(row):
-            if row["Payé"]: 
-                return ['background-color: rgba(144, 238, 144, 0.2)'] * len(row) # Vert
-            if row["Statut"] == "Passé": 
-                return ['background-color: rgba(255, 99, 71, 0.2)'] * len(row) # Rouge
+            if row["Payé"]: return ['background-color: rgba(144, 238, 144, 0.2)'] * len(row)
+            if row["Statut"] == "Passé": return ['background-color: rgba(255, 99, 71, 0.2)'] * len(row)
             return [''] * len(row)
 
         if not df_total.empty:
-            # Formatage de la date pour l'affichage
             df_display = df_total.copy()
             df_display["Date"] = df_display["Date"].apply(lambda x: x.strftime("%d/%m/%Y"))
             
-            # Application du style et affichage de l'éditeur
-            styled_df = df_display.style.apply(style_rows, axis=1)
-            
             edited_df = st.data_editor(
-                styled_df,
+                df_display.style.apply(style_rows, axis=1),
                 column_config={
                     "Payé": st.column_config.CheckboxColumn("Réglé ?"),
-                    "Clef": None, # Caché
+                    "Clef": None,
                     "Statut": st.column_config.TextColumn("Échéance")
                 },
                 disabled=["Date", "Appartement", "Statut"],
                 hide_index=True,
                 use_container_width=True,
-                key="editor_annuel_2026"
+                key="editor_menages_final"
             )
 
-            # 5. Bouton de Sauvegarde
             if st.button("💾 Enregistrer les règlements"):
                 for _, row in edited_df.iterrows():
                     dict_paye[row["Clef"]] = row["Payé"]
-                
-                # On écrase le fichier de statut avec les nouvelles cases cochées
                 df_save = pd.DataFrame([{"Clef": k, "Payé": v} for k, v in dict_paye.items()])
                 df_save.to_csv(PAIEMENTS_FILE, index=False)
-                st.success("Modifications enregistrées !")
+                st.success("Statuts mis à jour !")
                 st.rerun()
-        else:
-            st.info("Aucune donnée trouvée. Vérifiez que vous avez bien coché des ménages dans les pages Détails 014 ou 119.")
