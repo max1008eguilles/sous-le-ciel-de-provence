@@ -95,6 +95,20 @@ if check_password():
     solde_cash_physique = get_solde("Cash")
     total_treso_dynamique = solde_cic + solde_cash_physique
 
+    # --- SIDEBAR ---
+    with st.sidebar:
+        st.write(f"👤 **Connecté en tant que : {st.session_state.get('user_authenticated', 'Maxence')}**")
+        if st.button("Se déconnecter"):
+            st.session_state["password_correct"] = False
+            st.rerun()
+        st.divider()
+        st.title("📂 Navigation")
+        page = st.radio("Aller vers :", ["RNM IMMO", "COMPTA", "Réservations", "RO 2026", "Détail 014", "Détail 119", "Ménages"])
+        
+        if page in ["Détail 014", "Détail 119"]:
+            st.divider()
+            sel_year = st.selectbox("Année", [2025, 2026, 2027], index=1)
+            sel_month = st.selectbox("Mois", list(range(1, 13)), index=date.today().month - 1)
 
     # --- PAGE RNM IMMO ---
     if page == "RNM IMMO":
