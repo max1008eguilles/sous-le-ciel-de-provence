@@ -692,14 +692,13 @@ if check_password():
         PAIEMENTS_FILE = "statut_paiements_menages.csv"
         COURSES_FILE = "frais_courses.csv"
 
-        # 1. Chargement des données de paiement et des fichiers sources
+        # 1. Chargement des données
         if os.path.exists(PAIEMENTS_FILE):
             try:
                 df_p = pd.read_csv(PAIEMENTS_FILE)
                 dict_paye = dict(zip(df_p["Clef"], df_p["Payé"].astype(bool)))
             except: dict_paye = {}
-        else:
-            dict_paye = {}
+        else: dict_paye = {}
 
         all_data = []
         sources = {"Studio 014": "menages_manuels_014.csv", "Studio 119": "menages_manuels_119.csv"}
@@ -723,7 +722,7 @@ if check_password():
                                 })
                         except: continue
 
-        # 2. Calcul des Métriques Financières
+        # 2. Métriques Financières
         if os.path.exists(COURSES_FILE):
             try: montant_courses = pd.read_csv(COURSES_FILE)["montant"].iloc[0]
             except: montant_courses = 0.0
@@ -736,83 +735,95 @@ if check_password():
             total_global_du = total_prestations + montant_courses
         else:
             df_total = pd.DataFrame(columns=["Clef", "Date", "Appartement", "Statut", "Payé"])
-            total_prestations = 0.0
-            total_global_du = montant_courses
+            total_prestations = 0.0 ; total_global_du = montant_courses
 
-        # Affichage des métriques en haut
         m1, m2, m3 = st.columns(3)
         m1.metric("Ménages à régler", len(df_du))
         m2.metric("Total Prestations", f"{total_prestations:.2f} €")
         m3.metric("TOTAL GLOBAL DÛ", f"{total_global_du:.2f} €")
 
-        # Frais de courses dans un expander discret
         with st.expander("🛒 Gérer les frais de courses"):
             new_montant = st.number_input("Cumul courses (€)", value=float(montant_courses), step=1.0)
             if st.button("Enregistrer Montant Courses"):
                 pd.DataFrame({"montant": [new_montant]}).to_csv(COURSES_FILE, index=False)
                 st.rerun()
 
-        # 3. BLOC CODES D'ACCÈS (Placé juste au-dessus du tableau)
+        # 3. BLOC CODES D'ACCÈS
         st.divider()
         st.subheader("🔑 Codes d'Accès")
         
         temp_resa = df_resa.copy()
         temp_resa['Date Arrivée'] = pd.to_datetime(temp_resa['Date Arrivée'], errors='coerce')
+        today = date.today()
 
-        # Logique de récupération des codes
+        # Récupération des codes pour l'affichage et le message
         try:
-            today = date.today()
-            code_res_val = temp_resa[
-                (temp_resa['Date Arrivée'].dt.month == today.month) & 
-                (temp_resa['Code Résidence'].str.strip() != "")
-            ].iloc[0]['Code Résidence']
-        except: code_res_val = "N/A"
+            code_res_val = temp_resa[(temp_resa['Date Arrivée'].dt.month == today.month) & (temp_resa['Code Résidence'].notna())].iloc[0]['Code Résidence']
+        except: code_res_val = "À vérifier"
 
         try:
-            next_119 = temp_resa[
-                (temp_resa['Appartement'].astype(str) == "119") & (temp_resa['Date Arrivée'].dt.date >= today)
-            ].sort_values(by='Date Arrivée').iloc[0]
+            next_119 = temp_resa[(temp_resa['Appartement'].astype(str) == "119") & (temp_resa['Date Arrivée'].dt.date >= today)].sort_values(by='Date Arrivée').iloc[0]
             code_119_val = next_119['Code Studio']
             date_119 = next_119['Date Arrivée'].strftime('%d/%m')
-        except:
-            code_119_val = "N/A"
-            date_119 = "-"
+        except: code_119_val = "N/A" ; date_119 = "-"
 
-        # Affichage visuel des codes
         c_code1, c_code2, c_code3 = st.columns(3)
-        c_code1.info(f"**🏢 RÉSIDENCE** (Mai)\n\n# {code_res_val}")
-        c_code2.success(f"**🚪 STUDIO 014** (Fixe)\n\n# 178459")
-        c_code3.warning(f"**🔑 STUDIO 119** (dès le {date_119})\n\n# {code_119_val}")
+        c_code1.info(f"**🏢 RÉSIDENCE**\n\n# {code_res_val}")
+        c_code2.success(f"**🚪 STUDIO 014**\n\n# 178459")
+        c_code3.warning(f"**🔑 STUDIO 119** (le {date_119})\n\n# {code_119_val}")
 
-        # 4. Tableau de l'Historique
+        # --- 4. BOUTON WHATSAPP AVEC RAPPEL DES CODES ---
         st.write("")
-        st.subheader("📋 Historique des passages")
+        menages_futurs = df_total[df_total["Statut"] == "À venir"].sort_values(by="Date")
+        
+        if not menages_futurs.empty:
+            texte_menages = ""
+            for _, m in menages_futurs.iterrows():
+                texte_menages += f"- {m['Appartement']} le {m['Date'].strftime('%d/%m')}\n"
+            
+            # Message complet avec codes
+            message_whatsapp = (
+                f"✨ *PLANNING MÉNAGES À VENIR*\n\n"
+                f"{texte_menages}\n"
+                f"🔑 *RAPPEL DES CODES :*\n"
+                f"- Résidence : {code_res_val}\n"
+                f"- Studio 014 : 178459\n"
+                f"- Studio 119 : {code_119_val} (dès le {date_119})\n\n"
+                f"Merci ! 🙏"
+            )
+            
+            import urllib.parse
+            msg_encoded = urllib.parse.quote(message_whatsapp)
+            whatsapp_url = f"https://wa.me/?text={msg_encoded}"
+            
+            st.link_button("📲 Envoyer Planning & Codes sur WhatsApp", whatsapp_url, use_container_width=True, type="primary")
 
-        def style_rows(row):
-            if row["Payé"]: return ['background-color: rgba(144, 238, 144, 0.2)'] * len(row)
-            if row["Statut"] == "Passé": return ['background-color: rgba(255, 99, 71, 0.2)'] * len(row)
-            return [''] * len(row)
+        # 5. HISTORIQUE
+        st.divider()
+        st.subheader("📋 Historique des passages")
 
         if not df_total.empty:
             df_display = df_total.copy()
             df_display["Date"] = df_display["Date"].apply(lambda x: x.strftime("%d/%m/%Y"))
             
+            def style_rows(row):
+                if row["Payé"]: return ['background-color: rgba(144, 238, 144, 0.2)'] * len(row)
+                if row["Statut"] == "Passé": return ['background-color: rgba(255, 99, 71, 0.2)'] * len(row)
+                return [''] * len(row)
+
             edited_df = st.data_editor(
                 df_display.style.apply(style_rows, axis=1),
                 column_config={
                     "Payé": st.column_config.CheckboxColumn("Réglé ?"),
-                    "Clef": None,
-                    "Statut": st.column_config.TextColumn("Échéance")
+                    "Clef": None, "Statut": st.column_config.TextColumn("Échéance")
                 },
                 disabled=["Date", "Appartement", "Statut"],
-                hide_index=True,
-                use_container_width=True,
-                key="editor_menages_final"
+                hide_index=True, use_container_width=True, key="editor_menages_final"
             )
 
             if st.button("💾 Enregistrer les règlements"):
                 for _, row in edited_df.iterrows():
                     dict_paye[row["Clef"]] = row["Payé"]
                 pd.DataFrame([{"Clef": k, "Payé": v} for k, v in dict_paye.items()]).to_csv(PAIEMENTS_FILE, index=False)
-                st.success("Statuts mis à jour !")
+                st.success("Enregistré !")
                 st.rerun()
