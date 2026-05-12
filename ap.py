@@ -666,7 +666,7 @@ if check_password():
         PAIEMENTS_FILE = "statut_paiements_menages.csv"
         COURSES_FILE = "frais_courses.csv"
 
-        # 1. Chargement des états de paiement (Déjà réglé ou non)
+        # 1. Chargement des états de paiement (Historique des boutons "Réglé")
         if os.path.exists(PAIEMENTS_FILE):
             try:
                 df_p = pd.read_csv(PAIEMENTS_FILE)
@@ -675,7 +675,7 @@ if check_password():
         else:
             dict_paye = {}
 
-        # 2. Collecte de TOUTES les dates cochées dans les fichiers sources
+        # 2. Collecte de TOUTES les données cochées dans Studio 014 et 119
         all_data = []
         sources = {
             "Studio 014": "menages_manuels_014.csv", 
@@ -685,19 +685,24 @@ if check_password():
         for appt_name, file_path in sources.items():
             if os.path.exists(file_path):
                 df_src = pd.read_csv(file_path)
-                # On vérifie les deux noms de colonnes possibles pour la case à cocher
-                col_etat = "Etat" if "Etat" in df_src.columns else "Ménage ?"
                 
-                if "Date" in df_src.columns and col_etat in df_src.columns:
-                    # On filtre : uniquement ce qui est coché True (depuis le début du fichier)
+                # On identifie la colonne de la case à cocher (tolérance sur le nom)
+                col_etat = None
+                for c in ["Etat", "Ménage ?", "Ménage"]:
+                    if c in df_src.columns:
+                        col_etat = c
+                        break
+                
+                if "Date" in df_src.columns and col_etat:
+                    # FILTRE CRUCIAL : On prend tout ce qui est coché True sans limite de mois
                     df_checked = df_src[df_src[col_etat] == True].copy()
                     
                     for _, row in df_checked.iterrows():
                         d_str = str(row["Date"])
-                        clef = f"{appt_name}_{d_str}"
+                        clef = f"{appt_name}_{d_str}" # ID unique pour le suivi
                         try:
                             d_obj = pd.to_datetime(d_str).date()
-                            # On ne garde que l'année 2026
+                            # On ne garde que l'année en cours
                             if d_obj.year == 2026:
                                 all_data.append({
                                     "Clef": clef,
@@ -708,72 +713,80 @@ if check_password():
                                 })
                         except: continue
 
-        # 3. Calculs financiers
+        # 3. Gestion des Frais de Courses
         if os.path.exists(COURSES_FILE):
             try: montant_courses = pd.read_csv(COURSES_FILE)["montant"].iloc[0]
             except: montant_courses = 0.0
         else: montant_courses = 0.0
 
+        # 4. Calculs des compteurs
         if all_data:
             df_total = pd.DataFrame(all_data).drop_duplicates(subset=['Clef']).sort_values(by="Date", ascending=False)
-            # Dû = Passé ET Non Payé
+            # Le montant dû = Prestations passées ET non réglées
             df_du = df_total[(df_total["Statut"] == "Passé") & (df_total["Payé"] == False)]
             total_prestations = len(df_du) * PRIX_MENAGE_UNITAIRE
-            total_a_regler = total_prestations + montant_courses
+            total_global_du = total_prestations + montant_courses
         else:
             df_total = pd.DataFrame(columns=["Clef", "Date", "Appartement", "Statut", "Payé"])
             total_prestations = 0.0
-            total_a_regler = montant_courses
+            total_global_du = montant_courses
 
-        # --- AFFICHAGE ---
+        # --- INTERFACE UTILISATEUR ---
         st.subheader("🛒 Frais de Courses")
-        new_montant = st.number_input("Montant à ajouter (Courses/Frais)", value=float(montant_courses), step=1.0)
+        new_montant = st.number_input("Montant cumulé des courses (€)", value=float(montant_courses), step=1.0)
         if new_montant != montant_courses:
             pd.DataFrame({"montant": [new_montant]}).to_csv(COURSES_FILE, index=False)
             st.rerun()
 
         st.divider()
         
+        # Affichage des métriques (identique à ton souhait)
         c1, c2, c3 = st.columns(3)
         c1.metric("Ménages à régler", len(df_du))
         c2.metric("Total Prestations", f"{total_prestations:.2f} €")
-        c3.metric("TOTAL GLOBAL DÛ", f"{total_a_regler:.2f} €", delta_color="inverse")
+        c3.metric("TOTAL GLOBAL DÛ", f"{total_global_du:.2f} €")
 
         st.divider()
-        st.subheader("📋 Historique Global 2026")
+        st.subheader("📋 Historique Global (Toutes les dates cochées)")
 
-        # Fonction de coloration
+        # Logique de coloration des lignes
         def style_rows(row):
-            if row["Payé"]: return ['background-color: rgba(144, 238, 144, 0.2)'] * len(row)
-            if row["Statut"] == "Passé": return ['background-color: rgba(255, 99, 71, 0.2)'] * len(row)
+            if row["Payé"]: 
+                return ['background-color: rgba(144, 238, 144, 0.2)'] * len(row) # Vert
+            if row["Statut"] == "Passé": 
+                return ['background-color: rgba(255, 99, 71, 0.2)'] * len(row) # Rouge
             return [''] * len(row)
 
         if not df_total.empty:
-            # On affiche tout l'historique
+            # Formatage de la date pour l'affichage
             df_display = df_total.copy()
             df_display["Date"] = df_display["Date"].apply(lambda x: x.strftime("%d/%m/%Y"))
             
+            # Application du style et affichage de l'éditeur
             styled_df = df_display.style.apply(style_rows, axis=1)
             
             edited_df = st.data_editor(
                 styled_df,
                 column_config={
                     "Payé": st.column_config.CheckboxColumn("Réglé ?"),
-                    "Clef": None,
+                    "Clef": None, # Caché
                     "Statut": st.column_config.TextColumn("Échéance")
                 },
                 disabled=["Date", "Appartement", "Statut"],
                 hide_index=True,
                 use_container_width=True,
-                key="editor_global_2026"
+                key="editor_annuel_2026"
             )
 
-            if st.button("💾 Enregistrer les modifications"):
+            # 5. Bouton de Sauvegarde
+            if st.button("💾 Enregistrer les règlements"):
                 for _, row in edited_df.iterrows():
                     dict_paye[row["Clef"]] = row["Payé"]
+                
+                # On écrase le fichier de statut avec les nouvelles cases cochées
                 df_save = pd.DataFrame([{"Clef": k, "Payé": v} for k, v in dict_paye.items()])
                 df_save.to_csv(PAIEMENTS_FILE, index=False)
-                st.success("Historique mis à jour !")
+                st.success("Modifications enregistrées !")
                 st.rerun()
         else:
-            st.info("Aucun ménage détecté dans les fichiers sources pour 2026.")
+            st.info("Aucune donnée trouvée. Vérifiez que vous avez bien coché des ménages dans les pages Détails 014 ou 119.")
