@@ -810,7 +810,6 @@ if check_password():
                 st.rerun()
 
         #RO2026
-        
         elif page == "RO 2026":
         st.title("📈 Récapitulatif Opérationnel - RO 2026")
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
