@@ -682,7 +682,7 @@ if check_password():
         else:
             frais_ext_data = {"montant_courses": 0.0}
 
-        # ZONE DE SAISIE COURSES
+        # ZONE COURSES
         st.subheader("🛒 Frais Supplémentaires")
         nouveau_montant_courses = st.number_input(
             "Montant des Courses (€)", 
@@ -696,7 +696,7 @@ if check_password():
 
         st.divider()
 
-        # 3. COLLECTE GLOBALE (SANS LIMITE DE MOIS)
+        # 3. COLLECTE TOTALE (SCAN COMPLET DES FICHIERS)
         all_menages = []
         fichiers_appart = {
             "Studio 014": "menages_manuels_014.csv",
@@ -706,8 +706,8 @@ if check_password():
         for appart, file in fichiers_appart.items():
             if os.path.exists(file):
                 df_m = pd.read_csv(file)
-                # On s'assure que "Etat" existe et on ne prend que les cochés
                 if "Etat" in df_m.columns:
+                    # On prend TOUS les ménages cochés dans l'histoire de l'appart
                     df_m_checked = df_m[df_m["Etat"] == True].copy()
                     for _, row in df_m_checked.iterrows():
                         d_obj = datetime.strptime(row["Date"], "%Y-%m-%d").date()
@@ -723,32 +723,35 @@ if check_password():
         if not all_menages:
             st.info("Aucun ménage n'est coché dans les fiches détails.")
         else:
-            # ON TRIE TOUT PAR DATE (DU PLUS RÉCENT AU PLUS ANCIEN)
+            # Tri par date décroissante pour avoir les plus récents en premier
             df_total = pd.DataFrame(all_menages).sort_values(by="Date", ascending=False)
             
-            # CALCUL DES MONTANTS SUR TOUS LES MÉNAGES PASSÉS NON PAYÉS
+            # Calcul financier sur TOUT l'historique
             df_du = df_total[(df_total["Statut"] == "Passé") & (df_total["Payé"] == False)]
             total_prestations = len(df_du) * PRIX_MENAGE_UNITAIRE
             montant_final_du = total_prestations + nouveau_montant_courses
 
-            # AFFICHAGE DES MÉTRIQUES
+            # Métriques
             m1, m2, m3 = st.columns(3)
-            m1.metric("Ménages à payer (total historique)", f"{len(df_du)}")
+            m1.metric("Ménages à payer", f"{len(df_du)}")
             m2.metric("Total à régler", f"{montant_final_du:,.2f} €")
             m3.write(f"**Détail :**\n- Prestations: {total_prestations}€\n- Courses: {nouveau_montant_courses}€")
 
-            # AFFICHAGE DES 20 DERNIERS (PEU IMPORTE LE MOIS)
-            st.subheader("📋 Les 20 dernières prestations cochées")
+            # Affichage des 20 derniers
+            st.subheader("📋 Les 20 dernières prestations")
             df_display = df_total.head(20).copy()
             df_display["Date"] = df_display["Date"].apply(lambda x: x.strftime("%d/%m/%Y"))
             
-            def color_paye(row):
-                if row["Statut"] == "Passé" and not row["Payé"]:
-                    return ['background-color: #ffcccc; color: black'] * len(row)
+            # LOGIQUE DE COULEUR : Rouge si dû, Vert si payé
+            def style_paiement(row):
+                if row["Payé"]:
+                    return ['background-color: #e6ffed; color: #000000'] * len(row) # VERT
+                elif row["Statut"] == "Passé":
+                    return ['background-color: #ffcccc; color: #000000'] * len(row) # ROUGE
                 return [''] * len(row)
 
             edited_paye = st.data_editor(
-                df_display.style.apply(color_paye, axis=1),
+                df_display.style.apply(style_paiement, axis=1),
                 use_container_width=True,
                 hide_index=True,
                 disabled=["Clef", "Date", "Appartement", "Statut"],
@@ -756,16 +759,16 @@ if check_password():
                     "Clef": None,
                     "Payé": st.column_config.CheckboxColumn("Réglé ?")
                 },
-                key="editor_paye_global_v2"
+                key="editor_paye_final"
             )
 
             if st.button("💾 Enregistrer les règlements"):
-                # On met à jour notre dictionnaire de paiements avec les cases du tableau
+                # On met à jour l'historique avec les choix faits dans le tableau
                 for _, row in edited_paye.iterrows():
                     dict_paye[row["Clef"]] = row["Payé"]
                 
-                # Sauvegarde globale
+                # Sauvegarde
                 new_save_df = pd.DataFrame([{"Clef": k, "Payé": v} for k, v in dict_paye.items()])
                 new_save_df.to_csv(PAIEMENTS_FILE, index=False)
-                st.success("Règlements enregistrés !")
+                st.success("Règlements mis à jour !")
                 st.rerun()
