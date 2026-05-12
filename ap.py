@@ -664,38 +664,51 @@ if check_password():
         
         PRIX_MENAGE_UNITAIRE = 20.0 
         PAIEMENTS_FILE = "statut_paiements_menages.csv"
-        
-        # 1. Charger l'historique des paiements (ce qui est déjà réglé)
+        COURSES_FILE = "frais_courses.csv" # Pour sauvegarder le montant des courses
+
+        # --- 1. CHARGEMENT DES DONNÉES ---
+        # Chargement historique paiements
         if os.path.exists(PAIEMENTS_FILE):
             try:
                 df_p = pd.read_csv(PAIEMENTS_FILE)
                 dict_paye = dict(zip(df_p["Clef"], df_p["Payé"].astype(bool)))
             except: dict_paye = {}
-        else:
-            dict_paye = {}
+        else: dict_paye = {}
 
-        # 2. COLLECTE FORCEE : On scanne les fichiers de sauvegarde manuelle
+        # Chargement montant des courses
+        if os.path.exists(COURSES_FILE):
+            try:
+                montant_courses_prec = pd.read_csv(COURSES_FILE)["montant"].iloc[0]
+            except: montant_courses_prec = 0.0
+        else: montant_courses_prec = 0.0
+
+        # --- 2. FRAIS SUPPLÉMENTAIRES (COURSES) ---
+        st.subheader("🛒 Frais Supplémentaires")
+        c_input, c_info = st.columns([1, 2])
+        montant_courses = c_input.number_input("Montant des Courses (€)", min_value=0.0, value=float(montant_courses_prec), step=1.0)
+        
+        if montant_courses > 0:
+            c_info.info(f"Le montant de {montant_courses}€ sera ajouté au total dû.")
+            # Sauvegarde immédiate si changement
+            if montant_courses != montant_courses_prec:
+                pd.DataFrame({"montant": [montant_courses]}).to_csv(COURSES_FILE, index=False)
+
+        # --- 3. COLLECTE DES MÉNAGES ---
         all_data = []
-        # On utilise les noms exacts définis dans tes pages "Détail"
-        sources = {
-            "Studio 014": "menages_manuels_014.csv", 
-            "Studio 119": "menages_manuels_119.csv"
-        }
+        sources = {"Studio 014": "menages_manuels_014.csv", "Studio 119": "menages_manuels_119.csv"}
         
         for appt_name, file_path in sources.items():
             if os.path.exists(file_path):
                 df_src = pd.read_csv(file_path)
+                # On check les colonnes 'Etat' ou 'Ménage ?' pour être sûr
+                col_check = "Etat" if "Etat" in df_src.columns else "Ménage ?"
                 
-                # Dans tes pages détails, la colonne s'appelle "Etat"
-                if "Date" in df_src.columns and "Etat" in df_src.columns:
-                    # On ne garde que les lignes où la case est cochée (True)
-                    df_checked = df_src[df_src["Etat"] == True].copy()
-                    
+                if "Date" in df_src.columns and col_check in df_src.columns:
+                    df_checked = df_src[df_src[col_check] == True].copy()
                     for _, row in df_checked.iterrows():
                         d_str = str(row["Date"])
-                        clef = f"{appt_name}_{d_str}" # Identifiant unique pour le paiement
+                        clef = f"{appt_name}_{d_str}"
                         try:
-                            # Conversion pour le tri par date
                             d_obj = pd.to_datetime(d_str).date()
                             all_data.append({
                                 "Clef": clef,
@@ -704,58 +717,61 @@ if check_password():
                                 "Statut": "Passé" if d_obj < date.today() else "À venir",
                                 "Payé": dict_paye.get(clef, False)
                             })
-                        except: 
-                            continue
+                        except: continue
 
-        # 3. Traitement et Calculs
+        # --- 4. CALCULS ET COMPTEURS ---
         if all_data:
-            # Création du DataFrame et suppression des doublons éventuels
             df_total = pd.DataFrame(all_data).drop_duplicates(subset=['Clef']).sort_values(by="Date", ascending=False)
-            
-            # Calcul du montant dû : Uniquement les ménages PASSÉS et NON PAYÉS
             df_du = df_total[(df_total["Statut"] == "Passé") & (df_total["Payé"] == False)]
-            montant_du = len(df_du) * PRIX_MENAGE_UNITAIRE
+            prestation_due = len(df_du) * PRIX_MENAGE_UNITAIRE
+            total_global = prestation_due + montant_courses
         else:
             df_total = pd.DataFrame(columns=["Clef", "Date", "Appartement", "Statut", "Payé"])
-            montant_du = 0.0
-
-        # --- AFFICHAGE ---
-        c1, c2 = st.columns(2)
-        c1.metric("Ménages à régler (Historique complet)", len(df_du) if all_data else 0)
-        c2.metric("TOTAL À PAYER", f"{montant_du:.2f} €")
+            prestation_due = 0.0
+            total_global = montant_courses
 
         st.divider()
-        st.subheader("📋 Historique des prestations cochées")
-        
-        # Préparation de l'affichage (on montre les 30 derniers)
-        df_viz = df_total.head(30).copy()
-        if not df_viz.empty:
-            df_viz["Date"] = df_viz["Date"].apply(lambda x: x.strftime("%d/%m/%Y"))
-        
-        # Éditeur interactif pour marquer comme "Payé"
-        edited_df = st.data_editor(
-            df_viz,
-            column_config={
-                "Payé": st.column_config.CheckboxColumn("Réglé ?"),
-                "Clef": None, # On cache la colonne technique id
-                "Statut": st.column_config.TextColumn("État")
-            },
-            disabled=["Date", "Appartement", "Statut"],
-            hide_index=True,
-            use_container_width=True,
-            key="editor_full_menages"
-        )
+        col1, col2, col3 = st.columns([1, 1, 1.5])
+        col1.metric("Ménages à régler", len(df_du))
+        col2.metric("TOTAL DÛ", f"{total_global:.2f} €")
+        col3.info(f"**Détail :** {prestation_due}€ (Ménages) + {montant_courses}€ (Courses)")
 
-        # 4. SAUVEGARDE
-        if st.button("💾 Enregistrer les règlements"):
-            # On met à jour le dictionnaire global avec les changements de l'utilisateur
-            for _, row in edited_df.iterrows():
-                if row["Clef"]:
+        # --- 5. TABLEAU AVEC COULEURS ---
+        st.subheader("📋 Historique (20 dernières prestations)")
+
+        def colorier_lignes(row):
+            if row["Payé"] == True:
+                return ['background-color: rgba(144, 238, 144, 0.3)'] * len(row) # Vert clair
+            elif row["Statut"] == "Passé" and row["Payé"] == False:
+                return ['background-color: rgba(255, 99, 71, 0.3)'] * len(row) # Rouge/Orange clair
+            return [''] * len(row)
+
+        df_viz = df_total.head(20).copy()
+        if not df_viz.empty:
+            # On applique le style avant d'afficher
+            styled_df = df_viz.style.apply(colorier_lignes, axis=1)
+            
+            edited_df = st.data_editor(
+                styled_df,
+                column_config={
+                    "Payé": st.column_config.CheckboxColumn("Réglé ?"),
+                    "Clef": None,
+                    "Statut": st.column_config.TextColumn("État")
+                },
+                disabled=["Date", "Appartement", "Statut"],
+                hide_index=True,
+                use_container_width=True,
+                key="editor_final_version"
+            )
+
+            # --- 6. SAUVEGARDE ---
+            if st.button("💾 Enregistrer les règlements"):
+                for _, row in edited_df.iterrows():
                     dict_paye[row["Clef"]] = row["Payé"]
-            
-            # Sauvegarde dans le fichier CSV dédié aux paiements
-            df_save_p = pd.DataFrame([{"Clef": k, "Payé": v} for k, v in dict_paye.items()])
-            df_save_p.to_csv(PAIEMENTS_FILE, index=False)
-            
-            st.success("Règlements mis à jour avec succès !")
-            st.rerun()
+                
+                df_save_p = pd.DataFrame([{"Clef": k, "Payé": v} for k, v in dict_paye.items()])
+                df_save_p.to_csv(PAIEMENTS_FILE, index=False)
+                st.success("Données sauvegardées !")
+                st.rerun()
+        else:
+            st.write("Aucun ménage coché pour le moment.")
