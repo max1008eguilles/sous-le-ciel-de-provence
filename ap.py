@@ -201,28 +201,32 @@ if check_password():
         if os.path.exists(RESA_FILE):
             df_resa = pd.read_csv(RESA_FILE, dtype=str)
             
+            # Initialisation de la colonne si elle n'existe pas
+            if "Guide Envoyé" not in df_resa.columns:
+                df_resa["Guide Envoyé"] = "Non"
+
             # --- SECTION 1 : ENVOI RAPIDE (ARRIVÉES DU JOUR) ---
             st.subheader("🚀 Arrivées du jour")
             
             from datetime import timedelta
             date_paris = (datetime.utcnow() + timedelta(hours=2)).strftime("%Y-%m-%d")
-            
             df_jour = df_resa[df_resa["Date Arrivée"] == date_paris].copy()
 
             if df_jour.empty:
                 st.info(f"Aucune arrivée prévue aujourd'hui ({date_paris}).")
             else:
-                st.write(f"Vérification des arrivées pour : **{date_paris}**")
-                client_a_envoyer = st.selectbox(
-                    "Sélectionner le client du jour :", 
-                    df_jour['Prénom_Nom'].unique()
-                )
+                st.write(f"Vérification pour : **{date_paris}**")
+                client_a_envoyer = st.selectbox("Sélectionner le client :", df_jour['Prénom_Nom'].unique())
                 
+                # On vérifie si déjà envoyé pour l'affichage
+                deja_envoye = df_resa.loc[df_resa['Prénom_Nom'] == client_a_envoyer, "Guide Envoyé"].values[0]
+                if deja_envoye == "Oui":
+                    st.warning("⚠️ Ce guide a déjà été marqué comme envoyé.")
+
                 if st.button("📤 Envoyer le guide au client sélectionné"):
                     resa_sel = df_jour[df_jour['Prénom_Nom'] == client_a_envoyer].iloc[0]
                     appart = str(resa_sel.get('Appartement', ''))
 
-                    # Sécurité Appartement 014
                     if "14" in appart or "014" in appart:
                         webhook_url = "https://hook.eu2.make.com/7v3yap243qgcxbu8pc539owwgrvr32qt"
                         payload = {
@@ -237,74 +241,42 @@ if check_password():
                         try:
                             r = requests.post(webhook_url, json=payload)
                             if r.status_code == 200:
-                                st.success(f"✅ Guide 014 envoyé à {resa_sel['Prénom_Nom']} !")
+                                # MISE À JOUR AUTO DE LA CASE
+                                df_resa.loc[df_resa['Prénom_Nom'] == client_a_envoyer, "Guide Envoyé"] = "Oui"
+                                df_resa.to_csv(RESA_FILE, index=False)
+                                st.success(f"✅ Envoyé et enregistré pour {resa_sel['Prénom_Nom']} !")
+                                st.rerun()
                             else:
                                 st.error("❌ Erreur Make.")
                         except Exception as e:
                             st.error(f"❌ Erreur : {e}")
-                    
                     elif "119" in appart:
-                        st.warning(f"⚠️ Action impossible : {client_a_envoyer} est au 119.")
-                    else:
-                        st.error("Appartement inconnu.")
+                        st.warning("⚠️ Action stoppée : Client au 119.")
 
             st.divider()
 
-           # --- SECTION 2 : TABLEAU COMPLET ---
+            # --- SECTION 2 : TABLEAU COMPLET ---
             st.subheader("📝 Toutes les réservations")
             
-           # 1. Barre de recherche (Nom ou Téléphone)
-            search_query = st.text_input("🔍 Rechercher un client ou un numéro :", "")
+            search_query = st.text_input("🔍 Rechercher (Nom, Tel, Envoyé...) :", "")
             
-            # 2. Préparation des données (Tri et Filtre)
-            # On trie pour avoir les plus récents en haut
+            # Tri : récents en haut
             df_display = df_resa.sort_values(by="Date Arrivée", ascending=False)
             
-            # Application du filtre de recherche (CORRIGÉ)
             if search_query:
                 query = search_query.lower()
                 df_display = df_display[
                     df_display['Prénom_Nom'].str.lower().str.contains(query, na=False) | 
-                    df_display['Numéro tel'].str.contains(query, na=False)
+                    df_display['Numéro tel'].str.contains(query, na=False) |
+                    df_display['Guide Envoyé'].str.lower().str.contains(query, na=False)
                 ]
 
-            # 3. Affichage du tableau éditable
-            edited_resa = st.data_editor(
-                df_display, 
-                num_rows="dynamic", 
-                use_container_width=True, 
-                key="editor_full_list"
-            )
+            edited_resa = st.data_editor(df_display, num_rows="dynamic", use_container_width=True, key="editor_full_list")
 
             if st.button("💾 SAUVEGARDER LES MODIFICATIONS"):
-                # On sauvegarde le dataframe édité
                 edited_resa.to_csv(RESA_FILE, index=False)
-                st.success("Modification enregistrée et liste mise à jour !")
+                st.success("Enregistré !")
                 st.rerun()
-
-            # --- SECTION 3 : CALENDRIER ---
-            # (Garde ton code du calendrier ici sans changement)
-
-            # --- SECTION 3 : CALENDRIER ---
-            st.divider()
-            st.subheader("🗓️ Calendrier de contrôle")
-            evts = []
-            for _, r in edited_resa.iterrows():
-                try:
-                    d1 = pd.to_datetime(r["Date Arrivée"])
-                    d2 = pd.to_datetime(r["Date Départ"])
-                    if d2 >= d1:
-                        apt = str(r["Appartement"])
-                        color = "#1E90FF" if "014" in apt else "#2E8B57" if "119" in apt else "#808080"
-                        evts.append({
-                            "title": f"[{apt}] {r['Prénom_Nom']}", 
-                            "start": d1.strftime("%Y-%m-%d"), 
-                            "end": d2.strftime("%Y-%m-%d"), 
-                            "color": color, "allDay": True
-                        })
-                except: continue
-            calendar(events=evts, options={"initialView": "dayGridMonth", "locale": "fr"})
-                
     # --- PAGE DÉTAIL 014 ---
     elif page == "Détail 014":
         st.title("🏠 Détail Studio 014")
