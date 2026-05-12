@@ -151,10 +151,13 @@ if check_password():
     elif page == "COMPTA":
         st.title("💰 Comptabilité - RNM IMMO")
         
-        # Création du dossier justificatifs s'il n'existe pas
         import os
         if not os.path.exists("justificatifs"):
             os.makedirs("justificatifs")
+
+        # Mise à jour automatique des colonnes si besoin (pour éviter l'erreur ValueError)
+        if "Justificatif" not in df_compta.columns:
+            df_compta["Justificatif"] = ""
 
         c1, c2, c3 = st.columns(3)
         c1.metric("Montant CIC", f"{solde_cic:,.2f} €")
@@ -198,32 +201,40 @@ if check_password():
                 cpt = st.selectbox("Compte", ["CIC", "Cash"])
                 m = st.number_input("Montant", format="%.2f")
                 txt = st.text_input("Commentaire")
-                
-                # NOUVEAU : Champ pour le justificatif
                 uploaded_file = st.file_uploader("Justificatif (PDF, Image)", type=["pdf", "png", "jpg", "jpeg"])
                 
                 if st.form_submit_button("Valider"):
                     justif_path = ""
                     if uploaded_file is not None:
-                        # Sauvegarde physique du fichier
-                        justif_path = f"justificatifs/{d}_{t}_{m}_{uploaded_file.name}"
+                        justif_path = f"justificatifs/{d}_{t}_{m}_{uploaded_file.name}".replace(" ", "_")
                         with open(justif_path, "wb") as f:
                             f.write(uploaded_file.getbuffer())
                     
-                    # Ajout de la colonne Justificatif si elle n'existe pas dans le CSV
-                    new = pd.DataFrame([[d, t, cpt, m, txt, False, justif_path]], columns=df_compta.columns)
-                    pd.concat([df_compta, new], ignore_index=True).to_csv(COMPTA_FILE, index=False)
-                    st.success("Enregistré avec succès !")
+                    # On crée la ligne avec exactement le même nombre de colonnes que df_compta
+                    new_data = {
+                        "Date": str(d),
+                        "Type": t,
+                        "Compte": cpt,
+                        "Montant": m,
+                        "Commentaire": txt,
+                        "Pointé": False,
+                        "Justificatif": justif_path
+                    }
+                    new_row = pd.DataFrame([new_data])
+                    
+                    # Sauvegarde
+                    df_updated = pd.concat([df_compta, new_row], ignore_index=True)
+                    df_updated.to_csv(COMPTA_FILE, index=False)
+                    st.success("Transaction et justificatif enregistrés !")
                     st.rerun()
                     
         with col_list:
             st.subheader("📝 Journal")
-            # TRI : On affiche les plus récents en haut
-            df_sorted = df_compta.sort_values(by="Date", ascending=False)
+            # Tri par date décroissante (plus récent en haut)
+            df_display = df_compta.sort_values(by="Date", ascending=False)
             
-            ed_c = st.data_editor(df_sorted, num_rows="dynamic", use_container_width=True)
+            ed_c = st.data_editor(df_display, num_rows="dynamic", use_container_width=True)
             if st.button("💾 Sauvegarder Compta"):
-                # On sauvegarde sans changer l'ordre original ou en gardant le nouveau tri
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
                 
