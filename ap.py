@@ -151,12 +151,17 @@ if check_password():
     elif page == "COMPTA":
         st.title("💰 Comptabilité Partagée")
         
-        # 1. GESTION DES COLONNES (Évite l'erreur ValueError)
+        import os
+        # Création sécurisée du dossier de stockage
+        if not os.path.exists("justificatifs"):
+            os.makedirs("justificatifs")
+
+        # Initialisation automatique des colonnes manquantes dans le CSV
         for col in ["Justificatif", "Pointé"]:
             if col not in df_compta.columns:
                 df_compta[col] = ""
 
-        # ... (Metrics CIC / Cash / Total inchangés) ...
+        # --- (Garde tes colonnes de métriques CIC / Cash / Total ici) ---
 
         st.divider()
         col_add, col_list = st.columns([1, 2])
@@ -167,42 +172,41 @@ if check_password():
                 d = st.date_input("Date", date.today())
                 t = st.selectbox("Type", ["Revenu", "Dépense", "Crédit", "Apport", "Remboursement CCA"])
                 cpt = st.selectbox("Compte", ["CIC", "Cash"])
-                m = st.number_input("Montant", format="%.2f") # Autorise le négatif
+                # Permet les montants négatifs pour diminuer les dépenses
+                m = st.number_input("Montant", step=0.01, format="%.2f") 
                 txt = st.text_input("Commentaire")
-                
-                # Upload du fichier
                 up_file = st.file_uploader("Justificatif", type=["pdf", "png", "jpg", "jpeg"])
                 
                 if st.form_submit_button("Valider"):
-                    path_cloud = ""
+                    path_to_save = ""
                     if up_file:
-                        # Sauvegarde locale (accessible par tous si dashboard en ligne sur Streamlit Cloud)
-                        if not os.path.exists("justificatifs"): os.makedirs("justificatifs")
-                        fname = f"{d}_{m}_{up_file.name}".replace(" ", "_")
-                        path_cloud = os.path.join("justificatifs", fname)
-                        with open(path_cloud, "wb") as f:
+                        # Nom de fichier unique pour éviter les écrasements
+                        fname = f"{d}_{t}_{m}_{up_file.name}".replace(" ", "_")
+                        path_to_save = os.path.join("justificatifs", fname)
+                        with open(path_to_save, "wb") as f:
                             f.write(up_file.getbuffer())
                     
-                    new_line = pd.DataFrame([{
-                        "Date": str(d), "Type": t, "Compte": cpt, 
-                        "Montant": m, "Commentaire": txt, 
-                        "Pointé": "Non", "Justificatif": path_cloud
-                    }])
-                    
-                    pd.concat([df_compta, new_line], ignore_index=True).to_csv(COMPTA_FILE, index=False)
-                    st.success("Enregistré !")
+                    # Ajout sécurisé par dictionnaire (évite les erreurs de nombre de colonnes)
+                    new_data = {
+                        "Date": str(d), "Type": t, "Compte": cpt, "Montant": m,
+                        "Commentaire": txt, "Pointé": "Non", "Justificatif": path_to_save
+                    }
+                    df_updated = pd.concat([df_compta, pd.DataFrame([new_data])], ignore_index=True)
+                    df_updated.to_csv(COMPTA_FILE, index=False)
+                    st.success("Enregistré avec succès !")
                     st.rerun()
                     
         with col_list:
             st.subheader("📝 Journal (Plus récents en haut)")
-            # TRI : Plus récent en haut
+            # TRI : On affiche les plus récents en haut
             df_display = df_compta.sort_values(by="Date", ascending=False).copy()
             
-            # 2. CONFIGURATION DES COLONNES (Évite StreamlitAPIException)
-            # On utilise TextColumn car LinkColumn peut bugger si le chemin n'est pas une URL HTTP
+            # CONFIGURATION : Correction de l'erreur StreamlitAPIException
+            # On utilise TextColumn pour le chemin du fichier pour plus de stabilité
             column_config = {
-                "Justificatif": st.column_config.TextColumn("📄 Fichier", help="Chemin du justificatif"),
-                "Pointé": st.column_config.SelectboxColumn("✅ Check", options=["Non", "Oui"])
+                "Justificatif": st.column_config.TextColumn("📄 Justif", help="Chemin du fichier"),
+                "Pointé": st.column_config.SelectboxColumn("✅ Check", options=["Oui", "Non"]),
+                "Montant": st.column_config.NumberColumn("Montant", format="%.2f €")
             }
 
             ed_c = st.data_editor(
@@ -216,20 +220,27 @@ if check_password():
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
 
-            # --- 3. ACCÈS MULTI-APPAREILS AUX FICHIERS ---
+            # --- RÉCUPÉRATION / TÉLÉCHARGEMENT ---
             st.divider()
-            st.subheader("🔍 Consulter un justificatif")
-            files_available = [f for f in df_compta["Justificatif"].unique() if f and str(f) != "nan" and str(f) != "False"]
+            st.subheader("📂 Consulter un Justificatif")
+            # Liste des fichiers réels présents dans le journal
+            files = [f for f in df_compta["Justificatif"].unique() if f and str(f) != "nan" and os.path.exists(str(f))]
             
-            sel_file = st.selectbox("Choisir un fichier à ouvrir :", files_available)
-            if sel_file and os.path.exists(sel_file):
-                with open(sel_file, "rb") as f:
-                    btn = st.download_button(
-                        label="📥 Télécharger / Voir le justificatif",
+            if files:
+                selected_f = st.selectbox("Sélectionner une dépense :", files, format_func=lambda x: os.path.basename(x))
+                with open(selected_f, "rb") as f:
+                    # Le bouton de téléchargement est la méthode la plus fiable sur Mobile
+                    st.download_button(
+                        label="📥 Télécharger / Ouvrir le fichier",
                         data=f,
-                        file_name=os.path.basename(sel_file),
+                        file_name=os.path.basename(selected_f),
                         mime="application/octet-stream"
                     )
+                    # Aperçu si c'est une image
+                    if selected_f.lower().endswith(('.png', '.jpg', '.jpeg')):
+                        st.image(selected_f, use_container_width=True)
+            else:
+                st.info("Aucun justificatif disponible pour le moment.")
                 
 # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
