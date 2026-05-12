@@ -154,20 +154,14 @@ if check_password():
         import os
         if not os.path.exists("justificatifs"): os.makedirs("justificatifs")
 
-        # Nettoyage automatique des données pour éviter les bugs d'affichage
-        df_compta["Justificatif"] = df_compta["Justificatif"].astype(str).replace(["False", "nan", "None", ""], "Vide")
+        # STABILISATION : On s'assure que la colonne Justificatif ne contient que du texte
+        df_compta["Justificatif"] = df_compta["Justificatif"].fillna("Vide").astype(str)
 
-        # --- (Garde tes metrics ici) ---
+        # ... (Metrics habituelles) ...
 
-        st.divider()
-        
-        # 1. TABLEAU INTERACTIF (JOURNAL)
         st.subheader("📝 Journal des opérations")
-        st.info("👆 Cliquez sur une ligne pour gérer son justificatif.")
-        
         df_display = df_compta.sort_values(by="Date", ascending=False)
         
-        # Mode sélection de ligne
         selection = st.dataframe(
             df_display,
             use_container_width=True,
@@ -176,42 +170,52 @@ if check_password():
             key="journal_interactif"
         )
 
-        # 2. MODULE DYNAMIQUE : Apparaît seulement si une ligne est sélectionnée
         if selection and selection.selection.rows:
             idx = selection.selection.rows[0]
             ligne = df_display.iloc[idx]
             vrai_index = df_display.index[idx]
             
-            st.markdown(f"📊 **Action sur : {ligne['Commentaire']} ({ligne['Montant']}€)**")
+            st.markdown(f"📊 **Action sur : {ligne['Commentaire']}**")
             
-            col_v, col_u = st.columns(2)
+            col_v, col_u, col_d = st.columns([1, 1, 1])
             
             with col_v:
-                if ligne["Justificatif"] != "Vide" and os.path.exists(ligne["Justificatif"]):
-                    with open(ligne["Justificatif"], "rb") as f:
-                        st.download_button("👁️ Télécharger le justificatif actuel", f, 
-                                         file_name=os.path.basename(ligne["Justificatif"]),
-                                         key=f"dl_{vrai_index}")
-                    if ligne["Justificatif"].lower().endswith(('.png', '.jpg', '.jpeg')):
-                        st.image(ligne["Justificatif"], width=250)
+                # CORRECTION DU BUG : Vérification sécurisée
+                path_justif = str(ligne["Justificatif"])
+                if path_justif != "Vide" and path_justif != "None" and os.path.exists(path_justif):
+                    with open(path_justif, "rb") as f:
+                        st.download_button("👁️ Télécharger", f, file_name=os.path.basename(path_justif), key=f"dl_{vrai_index}")
                 else:
-                    st.warning("Aucun fichier lié.")
+                    st.info("ℹ️ Aucun justificatif")
 
             with col_u:
-                nouveau_f = st.file_uploader("Remplacer/Ajouter un fichier", type=["pdf","png","jpg","jpeg"], key=f"up_{vrai_index}")
-                if st.button("💾 Enregistrer sur cette ligne"):
+                nouveau_f = st.file_uploader("Modifier le fichier", type=["pdf","png","jpg","jpeg"], key=f"up_{vrai_index}")
+                if st.button("💾 Enregistrer"):
                     if nouveau_f:
                         fname = f"ID_{vrai_index}_{nouveau_f.name}".replace(" ", "_")
                         fpath = os.path.join("justificatifs", fname)
-                        with open(fpath, "wb") as f:
-                            f.write(nouveau_f.getbuffer())
-                        
+                        with open(fpath, "wb") as f: f.write(nouveau_f.getbuffer())
                         df_compta.at[vrai_index, "Justificatif"] = fpath
                         df_compta.to_csv(COMPTA_FILE, index=False)
-                        st.success("C'est fait !")
                         st.rerun()
 
+            with col_d:
+                # 1. BOUTON SUPPRIMER
+                st.write("Danger zone :")
+                if st.button("🗑️ Supprimer la ligne", type="primary", key=f"del_{vrai_index}"):
+                    # Si un fichier existe, on peut aussi le supprimer du serveur (optionnel)
+                    if path_justif != "Vide" and os.path.exists(path_justif):
+                        try: os.remove(path_justif)
+                        except: pass
+                    
+                    # Suppression de la ligne dans le DataFrame
+                    df_compta = df_compta.drop(vrai_index)
+                    df_compta.to_csv(COMPTA_FILE, index=False)
+                    st.success("Ligne supprimée !")
+                    st.rerun()
+
         st.divider()
+        # ... (Le reste de votre code avec le formulaire d'ajout) ...
 
         # 3. FORMULAIRE D'AJOUT (Nécessite du contenu pour éviter l'IndentationError)
         with st.expander("➕ Saisir une nouvelle opération"):
