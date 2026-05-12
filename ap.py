@@ -157,10 +157,9 @@ if check_password():
         # 1. NETTOYAGE
         df_compta["Justificatif"] = df_compta["Justificatif"].astype(str).replace(["False", "nan", "None", ""], "Vide")
         
-        # 2. CALCULS DE TRÉSORERIE (Soudes réels des comptes)
+        # 2. CALCULS DE TRÉSORERIE (Soldes réels des comptes)
         def calculer_solde(df, compte):
             temp = df[df["Compte"] == compte].copy()
-            # Le solde prend TOUT en compte pour être raccord avec la banque
             pos = temp[temp["Type"].isin(["Revenu", "Apport"])]["Montant"].sum()
             neg = temp[temp["Type"].isin(["Dépense", "Crédit", "Remboursement CCA"])]["Montant"].sum()
             return pos - neg
@@ -173,7 +172,7 @@ if check_password():
         c2.metric("Espèces (Cash)", f"{s_cash:,.2f} €")
         c3.metric("TOTAL RÉEL", f"{(s_cic + s_cash):,.2f} €")
 
-        # 3. ANALYSE FINANCIÈRE (Logique Cash Flow demandée)
+        # 3. ANALYSE FINANCIÈRE (Logique Cash Flow : Hors Apports/CCA)
         if not df_compta.empty:
             st.divider()
             st.subheader("📊 Analyse Financière")
@@ -192,28 +191,12 @@ if check_password():
             final_rows = []
             for a in sorted(df_calc['Année'].unique(), reverse=True):
                 v = recap_y.loc[a]
-                # CASH FLOW : Uniquement Revenus - (Dépenses + Crédit)
-                # On exclut Apport et Remboursement CCA de cette ligne
                 cf_y = v["Revenu"] - (v["Dépense"] + v["Crédit"])
-                
-                final_rows.append({
-                    "Période": f"TOTAL {a}", 
-                    "Revenus": v["Revenu"], 
-                    "Charges": v["Dépense"], 
-                    "Crédit": v["Crédit"], 
-                    "Cash Flow": cf_y
-                })
-                
+                final_rows.append({"Période": f"TOTAL {a}", "Revenus": v["Revenu"], "Charges": v["Dépense"], "Crédit": v["Crédit"], "Cash Flow": cf_y})
                 mes_mois = recap_m.xs(a, level='Année').sort_index(ascending=False)
                 for m, vm in mes_mois.iterrows():
                     cf_m = vm["Revenu"] - (vm["Dépense"] + vm["Crédit"])
-                    final_rows.append({
-                        "Période": m, 
-                        "Revenus": vm["Revenu"], 
-                        "Charges": vm["Dépense"], 
-                        "Crédit": vm["Crédit"], 
-                        "Cash Flow": cf_m
-                    })
+                    final_rows.append({"Période": m, "Revenus": vm["Revenu"], "Charges": vm["Dépense"], "Crédit": vm["Crédit"], "Cash Flow": cf_m})
             
             st.table(pd.DataFrame(final_rows).set_index("Période").style.format("{:,.2f} €"))
 
@@ -235,20 +218,28 @@ if check_password():
                     if f_file:
                         p_file = os.path.join("justificatifs", f"{f_date}_{f_file.name}".replace(" ","_"))
                         with open(p_file, "wb") as f: f.write(f_file.getbuffer())
-                    
-                    new_entry = pd.DataFrame([{
-                        "Date": str(f_date), "Type": f_type, "Compte": f_cpt,
-                        "Montant": f_mnt, "Commentaire": f_com, "Justificatif": p_file
-                    }])
+                    new_entry = pd.DataFrame([{"Date": str(f_date), "Type": f_type, "Compte": f_cpt, "Montant": f_mnt, "Commentaire": f_com, "Justificatif": p_file}])
                     df_compta = pd.concat([df_compta, new_entry], ignore_index=True)
                     df_compta.to_csv(COMPTA_FILE, index=False)
                     st.rerun()
 
         st.divider()
 
-        # 5. JOURNAL & GESTION
-        st.subheader("📝 Journal des opérations")
-        # On affiche uniquement les colonnes demandées
+        # 5. JOURNAL & EXPORT ZIP
+        col_titre, col_zip = st.columns([2, 1])
+        with col_titre:
+            st.subheader("📝 Journal des opérations")
+        
+        with col_zip:
+            # FONCTION EXPORT ZIP
+            files_to_zip = [f for f in df_compta["Justificatif"].tolist() if f != "Vide" and os.path.exists(f)]
+            if files_to_zip:
+                buf = io.BytesIO()
+                with zipfile.ZipFile(buf, "w") as z:
+                    for f in files_to_zip:
+                        z.write(f, os.path.basename(f))
+                st.download_button("📦 Télécharger tout (ZIP)", buf.getvalue(), "archive_justificatifs.zip", "application/zip")
+
         df_display = df_compta[["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"]].sort_values(by="Date", ascending=False)
         
         event = st.dataframe(
@@ -259,6 +250,7 @@ if check_password():
             column_config={"Montant": st.column_config.NumberColumn(format="%.2f €")}
         )
 
+        # 6. GESTION INDIVIDUELLE
         if event.selection.rows:
             idx_sel = event.selection.rows[0]
             ligne = df_display.iloc[idx_sel]
@@ -278,7 +270,7 @@ if check_password():
                         df_compta.at[vrai_idx, "Justificatif"] = "Vide"
                         df_compta.to_csv(COMPTA_FILE, index=False)
                         st.rerun()
-                else: st.warning("Aucun fichier.")
+                else: st.warning("Pas de fichier.")
 
             with g2:
                 new_up = st.file_uploader("Remplacer", type=["pdf","png","jpg","jpeg"], key=f"up_{vrai_idx}")
