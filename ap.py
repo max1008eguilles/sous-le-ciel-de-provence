@@ -812,107 +812,107 @@ if check_password():
         #RO2026
     elif page == "RO 2026":
         st.title("🚀 RNM IMMO - Cockpit de Pilotage 2026")
-        
-        # --- 1. CHARGEMENT & SYNCHRONISATION DES DONNÉES ---
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
-        PRIX_MENAGE = 20.0
-        CREDIT_119 = 689.72 # Tiré de ton tableau de bord patrimoine
+        
+        # --- 1. RÉCUPÉRATION DES PARAMÈTRES SOURCES ---
+        # Crédits depuis RNM IMMO (Source: Capture 21.14.11)
+        CREDIT_119 = 689.72 
         CREDIT_014 = 0.0
+        PRIX_MENAGE = 20.0
 
         try:
-            df_obj = pd.read_csv("objectifs_014_v2.csv") # Source unique pour les deux
             df_compta = pd.read_csv("compta.csv")
+            df_obj = pd.read_csv("objectifs_014_v2.csv")
         except:
-            df_obj = pd.DataFrame() ; df_compta = pd.DataFrame()
+            df_compta = pd.DataFrame() ; df_obj = pd.DataFrame()
 
-        # --- 2. STRUCTURE DU DASHBOARD ---
-        # Préparation d'un dictionnaire pour tout stocker
-        data = {
-            "CA GLOBAL (RNM)": [0.0]*12,
-            "Charges (Compta)": [0.0]*12,
-            "Ménages (014+119)": [0.0]*12,
-            "Crédits (Total)": [0.0]*12,
-            "CASH-FLOW NET": [0.0]*12,
-            "---": [""]*12, # Séparateur
-            "CA - Studio 014": [0.0]*12,
-            "Ménages - Studio 014": [0.0]*12,
-            "Objectif - Studio 014": [0.0]*12,
-            "--- ": [""]*12, # Séparateur
-            "CA - Studio 119": [0.0]*12,
-            "Ménages - Studio 119": [0.0]*12,
-            "Objectif - Studio 119": [0.0]*12,
-        }
-
-        # --- 3. LOGIQUE DE CALCUL AUTOMATIQUE ---
+        # --- 2. CALCULS DE PERFORMANCE (DATA ENGINE) ---
+        stats = {m: {"014": {}, "119": {}, "RNM": {}} for m in mois_noms}
         df_resa['Date Arrivée'] = pd.to_datetime(df_resa['Date Arrivée'], errors='coerce')
         
         for i, mois in enumerate(mois_noms):
             m_num = i + 1
-            
-            # CA par studio
+            # Filtrage Data
             res_m = df_resa[(df_resa['Date Arrivée'].dt.month == m_num) & (df_resa['Date Arrivée'].dt.year == 2026)]
-            ca014 = res_m[res_m["Appartement"].astype(str).str.contains("14|014")]["Montant"].sum()
-            ca119 = res_m[res_m["Appartement"].astype(str) == "119"]["Montant"].sum()
+            res_014 = res_m[res_m["Appartement"].astype(str).str.contains("14|014")]
+            res_119 = res_m[res_m["Appartement"].astype(str) == "119"]
             
-            # Ménages (Comptage auto dans les fichiers spécifiques)
-            def count_m(file, month):
-                if os.path.exists(file):
-                    df = pd.read_csv(file)
-                    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-                    col = next((c for c in ["Etat", "Ménage"] if c in df.columns), None)
-                    if col: return len(df[(df['Date'].dt.month == month) & (df[col] == True)]) * PRIX_MENAGE
-                return 0.0
-
-            m014 = count_m("menages_manuels_014.csv", m_num)
-            m119 = count_m("menages_manuels_119.csv", m_num)
+            # Métriques Studio 014
+            stats[mois]["014"]["CA"] = res_014["Montant"].sum()
+            stats[mois]["014"]["Nuits"] = res_014["Nuits"].sum() if "Nuits" in res_014.columns else len(res_014)
+            stats[mois]["014"]["Occ"] = (stats[mois]["014"]["Nuits"] / 31 * 100) # Simplifié
             
-            # Charges fixes (Compta)
-            charge_m = 0.0
+            # Métriques Studio 119
+            stats[mois]["119"]["CA"] = res_119["Montant"].sum()
+            stats[mois]["119"]["Nuits"] = res_119["Nuits"].sum() if "Nuits" in res_119.columns else len(res_119)
+            stats[mois]["119"]["Occ"] = (stats[mois]["119"]["Nuits"] / 31 * 100)
+            
+            # Métriques Global RNM
+            stats[mois]["RNM"]["CA"] = stats[mois]["014"]["CA"] + stats[mois]["119"]["CA"]
+            stats[mois]["RNM"]["Nuits"] = stats[mois]["014"]["Nuits"] + stats[mois]["119"]["Nuits"]
+            stats[mois]["RNM"]["Occ"] = (stats[mois]["RNM"]["Nuits"] / 62 * 100)
+            stats[mois]["RNM"]["PMoy"] = (stats[mois]["RNM"]["CA"] / stats[mois]["RNM"]["Nuits"]) if stats[mois]["RNM"]["Nuits"] > 0 else 0
+            
+            # Charges (Compta) & Crédits
+            ch_m = 0.0
             if not df_compta.empty:
                 df_compta['Date'] = pd.to_datetime(df_compta['Date'], errors='coerce')
-                charge_m = df_compta[(df_compta['Date'].dt.month == m_num)]["Montant"].sum()
-
-            # Objectifs
-            obj_m = 0.0
-            if not df_obj.empty:
-                obj_m = df_obj[(df_obj["Mois"] == mois)]["Objectif"].sum()
-
-            # Remplissage Matrix
-            data["CA - Studio 014"][i], data["CA - Studio 119"][i] = ca014, ca119
-            data["Ménages - Studio 014"][i], data["Ménages - Studio 119"][i] = m014, m119
-            data["Objectif - Studio 014"][i], data["Objectif - Studio 119"][i] = obj_m, obj_m
+                ch_m = df_compta[(df_compta['Date'].dt.month == m_num) & (df_compta['Type'] == "Dépense")]["Montant"].sum()
             
-            # Totaux RNM
-            data["CA GLOBAL (RNM)"][i] = ca014 + ca119
-            data["Charges (Compta)"][i] = charge_m
-            data["Ménages (014+119)"][i] = m014 + m119
-            data["Crédits (Total)"][i] = CREDIT_119 + CREDIT_014
-            data["CASH-FLOW NET"][i] = data["CA GLOBAL (RNM)"][i] - charge_m - data["Ménages (014+119)"][i] - data["Crédits (Total)"][i]
+            stats[mois]["RNM"]["Charges"] = ch_m
+            stats[mois]["RNM"]["Credits"] = CREDIT_119 + CREDIT_014
+            stats[mois]["RNM"]["Net"] = stats[mois]["RNM"]["CA"] - ch_m - stats[mois]["RNM"]["Credits"]
 
-        # --- 4. AFFICHAGE DES KPI GLOBAUX ---
-        t_ca = sum(data["CA GLOBAL (RNM)"])
-        t_ch = sum(data["Charges (Compta)"]) + sum(data["Ménages (014+119)"])
-        t_cr = sum(data["Crédits (Total)"])
-        t_cf = sum(data["CASH-FLOW NET"])
+        # --- 3. AFFICHAGE DES KPI GLOBAUX (Haut de page) ---
+        total_ca = sum(m["RNM"]["CA"] for m in stats.values())
+        total_net = sum(m["RNM"]["Net"] for m in stats.values())
+        occ_moy = sum(m["RNM"]["Occ"] for m in stats.values()) / 12
 
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("💰 Chiffre d'Affaires", f"{t_ca:,.0f} €")
-        k2.metric("📉 Charges & Ménages", f"{t_ch:,.0f} €")
-        k3.metric("💳 Mensualités Annuelles", f"{t_cr:,.0f} €")
-        k4.metric("🍀 CASH-FLOW RÉEL", f"{t_cf:,.0f} €")
-
-        st.divider()
-
-        # --- 5. TABLEAU DE BORD GÉNÉRAL ---
-        st.subheader("📊 Vision Mensuelle Consolidée")
-        df_cockpit = pd.DataFrame(data, index=mois_noms).T
+        c1, c2, c3 = st.columns(3)
+        c1.metric("💰 CA Annuel Cumulé", f"{total_ca:,.0f} €")
+        c2.metric("📈 Taux d'Occupation Moyen", f"{occ_moy:.1f} %")
+        c3.metric("📊 Cash Flow Net (An)", f"{total_net:,.0f} €")
         
-        # Style pour le tableau
-        st.dataframe(df_cockpit.style.format(precision=0), use_container_width=True)
-
-        # --- 6. RÉALISATION DES OBJECTIFS ---
         st.divider()
-        total_obj_rnm = sum(data["Objectif - Studio 014"]) + sum(data["Objectif - Studio 119"])
-        progression = (t_ca / total_obj_rnm) if total_obj_rnm > 0 else 0
-        st.write(f"### 🎯 Performance Annuelle : {progression*100:.1f}% de l'objectif")
-        st.progress(min(progression, 1.0))
+
+        # --- 4. TABLEAU DE BORD MODERNE (MODALITÉS DE PILOTAGE) ---
+        st.subheader("🗓️ Analyse Mensuelle Consolidée")
+        
+        # Construction d'un DataFrame propre pour l'affichage
+        pilotage_data = []
+        for m in mois_noms:
+            pilotage_data.append({
+                "Mois": m,
+                "CA RNM": stats[m]["RNM"]["CA"],
+                "Occ %": stats[m]["RNM"]["Occ"],
+                "Prix Moy.": stats[m]["RNM"]["PMoy"],
+                "Charges (Compta)": stats[m]["RNM"]["Charges"],
+                "Crédits": stats[m]["RNM"]["Credits"],
+                "NET (Cash Flow)": stats[m]["RNM"]["Net"],
+                "CA 014": stats[m]["014"]["CA"],
+                "CA 119": stats[m]["119"]["CA"]
+            })
+        
+        df_final = pd.DataFrame(pilotage_data).set_index("Mois")
+        
+        # Affichage avec formatage
+        st.dataframe(
+            df_final.style.format({
+                "CA RNM": "{:,.0f} €", "Occ %": "{:.1f} %", "Prix Moy.": "{:.1f} €",
+                "Charges (Compta)": "{:,.0f} €", "Crédits": "{:,.2f} €", 
+                "NET (Cash Flow)": "{:,.0f} €", "CA 014": "{:,.0f} €", "CA 119": "{:,.0f} €"
+            }), 
+            use_container_width=True
+        )
+
+        # --- 5. FOCUS PAR APPARTEMENT ---
+        st.divider()
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.write("**Performance Studio 014**")
+            st.caption(f"CA Annuel : {sum(m['014']['CA'] for m in stats.values()):,.0f} €")
+            st.caption(f"Occupation : {sum(m['014']['Occ'] for m in stats.values())/12:.1f} %")
+        with col_b:
+            st.write("**Performance Studio 119**")
+            st.caption(f"CA Annuel : {sum(m['119']['CA'] for m in stats.values()):,.0f} €")
+            st.caption(f"Occupation : {sum(m['119']['Occ'] for m in stats.values())/12:.1f} %")
