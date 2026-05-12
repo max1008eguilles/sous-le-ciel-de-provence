@@ -154,119 +154,130 @@ if check_password():
         import os, zipfile, io
         if not os.path.exists("justificatifs"): os.makedirs("justificatifs")
 
-        # 1. NETTOYAGE DES DONNÉES & PROTECTION CONTRE LES CRASHS
+        # 1. PRÉPARATION DES DONNÉES
         df_compta["Justificatif"] = df_compta["Justificatif"].astype(str).replace(["False", "nan", "None", ""], "Vide")
-        
-        # Initialisation de la colonne Pointé si elle n'existe pas
         if "Pointé" not in df_compta.columns:
             df_compta["Pointé"] = False
         df_compta["Pointé"] = df_compta["Pointé"].astype(bool)
 
-        # 2. CALCULS DE TRÉSORERIE RÉELS (Fiabilité totale)
-        def calculer_solde(df, compte):
-            temp = df[df["Compte"] == compte].copy()
-            # Additionne les entrées
-            positif = temp[temp["Type"].isin(["Revenu", "Apport"])]["Montant"].sum()
-            # Soustrait les sorties
-            negatif = temp[temp["Type"].isin(["Dépense", "Crédit", "Remboursement CCA"])]["Montant"].sum()
-            return positif - negatif
+        # 2. ACTIONS SUR LES COMPTES (Calculs)
+        def get_solde(compte):
+            sub = df_compta[df_compta["Compte"] == compte]
+            plus = sub[sub["Type"].isin(["Revenu", "Apport"])]["Montant"].sum()
+            moins = sub[sub["Type"].isin(["Dépense", "Crédit", "Remboursement CCA"])]["Montant"].sum()
+            return plus - moins
 
-        solde_cic = calculer_solde(df_compta, "CIC")
-        solde_cash = calculer_solde(df_compta, "Cash")
-        
+        s_cic, s_cash = get_solde("CIC"), get_solde("Cash")
         c1, c2, c3 = st.columns(3)
-        c1.metric("Compte CIC", f"{solde_cic:,.2f} €")
-        c2.metric("Espèces (Cash)", f"{solde_cash:,.2f} €")
-        c3.metric("TOTAL RÉEL", f"{(solde_cic + solde_cash):,.2f} €")
-
-        # ... (Le bloc Analyse Financière / Recap reste ici tel quel) ...
+        c1.metric("Compte CIC", f"{s_cic:,.2f} €")
+        c2.metric("Espèces (Cash)", f"{s_cash:,.2f} €")
+        c3.metric("TOTAL RÉEL", f"{(s_cic + s_cash):,.2f} €")
 
         st.divider()
-        st.subheader("📝 Journal & Pointage")
-        st.info("Cochez 'Pointé' pour valider une opération, puis cliquez sur Sauvegarder. Cliquez sur une ligne pour gérer son fichier ou la supprimer.")
 
-        # 3. UN SEUL TABLEAU INTERACTIF (Fusionné)
-        df_display = df_compta.sort_values(by="Date", ascending=False)
-        
-        # Éditeur pour les cases à cocher
+        # 3. FORMULAIRE D'AJOUT (Priorité n°1)
+        with st.expander("➕ Ajouter une nouvelle opération", expanded=False):
+            with st.form("form_add_new", clear_on_submit=True):
+                col_a, col_b = st.columns(2)
+                f_date = col_a.date_input("Date", date.today())
+                f_type = col_a.selectbox("Type", ["Revenu", "Dépense", "Crédit", "Apport", "Remboursement CCA"])
+                f_cpt = col_b.selectbox("Compte", ["CIC", "Cash"])
+                f_mnt = col_b.number_input("Montant", min_value=0.0, format="%.2f")
+                f_com = st.text_input("Commentaire")
+                f_file = st.file_uploader("Justificatif", type=["pdf","png","jpg","jpeg"])
+                
+                if st.form_submit_button("✅ Enregistrer l'opération"):
+                    p_file = "Vide"
+                    if f_file:
+                        p_file = os.path.join("justificatifs", f"{f_date}_{f_com[:10]}_{f_file.name}".replace(" ","_"))
+                        with open(p_file, "wb") as f: f.write(f_file.getbuffer())
+                    
+                    new_line = pd.DataFrame([{
+                        "Date": str(f_date), "Type": f_type, "Compte": f_cpt,
+                        "Montant": f_mnt, "Commentaire": f_com, "Justificatif": p_file, "Pointé": False
+                    }])
+                    df_compta = pd.concat([df_compta, new_line], ignore_index=True)
+                    df_compta.to_csv(COMPTA_FILE, index=False)
+                    st.rerun()
+
+        st.divider()
+
+        # 4. JOURNAL UNIQUE & POINTAGE
+        st.subheader("📝 Journal & Pointage")
+        df_sorted = df_compta.sort_values(by="Date", ascending=False)
+
+        # Éditeur pour cocher les cases
         edited_df = st.data_editor(
-            df_display,
+            df_sorted,
             column_config={
-                "Pointé": st.column_config.CheckboxColumn("Pointé ✅", default=False),
+                "Pointé": st.column_config.CheckboxColumn("Pointé ✅"),
                 "Justificatif": st.column_config.TextColumn("Fichier", disabled=True),
                 "Montant": st.column_config.NumberColumn(format="%.2f €")
             },
             disabled=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"],
             use_container_width=True,
-            key="journal_unique_editeur",
-            on_change=None # On gère la sauvegarde par bouton pour plus de sécurité
+            key="main_editor"
         )
 
-        # 4. SAUVEGARDE ET GESTION DES ACTIONS
-        col_save, col_zip = st.columns([1, 1])
-        with col_save:
-            if st.button("💾 Sauvegarder le pointage", use_container_width=True):
-                df_compta.update(edited_df)
-                df_compta.to_csv(COMPTA_FILE, index=False)
-                st.success("Pointage enregistré !")
-                st.rerun()
-        
-        with col_zip:
-            # Export ZIP simplifié
-            fichiers_actifs = [f for f in df_compta["Justificatif"].unique() if f != "Vide" and os.path.exists(str(f))]
-            if fichiers_actifs:
+        # Boutons de sauvegarde et ZIP
+        b1, b2 = st.columns(2)
+        if b1.button("💾 Sauvegarder le pointage ✅", use_container_width=True):
+            df_compta.update(edited_df)
+            df_compta.to_csv(COMPTA_FILE, index=False)
+            st.success("Modifications enregistrées !")
+            st.rerun()
+
+        with b2:
+            actifs = [f for f in df_compta["Justificatif"].unique() if f != "Vide" and os.path.exists(str(f))]
+            if actifs:
                 buf = io.BytesIO()
                 with zipfile.ZipFile(buf, "w") as z:
-                    for f_p in fichiers_actifs: z.write(f_p, os.path.basename(f_p))
-                st.download_button("📥 ZIP des Justificatifs", buf.getvalue(), "Archives.zip", use_container_width=True)
+                    for f in actifs: z.write(f, os.path.basename(f))
+                st.download_button("📥 ZIP des justificatifs", buf.getvalue(), "Archives_Justifs.zip", use_container_width=True)
 
-        # 5. MODULE DE GESTION DE LIGNE (Apparaît quand on clique dans le tableau)
-        # On utilise le même index que l'éditeur pour savoir quelle ligne est touchée
-        if st.session_state.get("journal_unique_editeur"):
-            # On récupère la sélection si l'utilisateur a cliqué sur une cellule
-            selection = st.session_state["journal_unique_editeur"].get("selection", {}).get("rows", [])
-            if selection:
-                idx_sel = selection[0]
-                ligne = df_display.iloc[idx_sel]
-                vrai_idx = df_display.index[idx_sel]
-                path_j = str(ligne["Justificatif"])
+        # 5. GESTION DES LIGNES (Suppression / Fichiers)
+        st.info("💡 Pour supprimer une ligne ou modifier son fichier : cochez la ligne à gauche dans le tableau.")
+        
+        # Récupération de la ligne sélectionnée via l'éditeur
+        sel_rows = st.session_state["main_editor"]["selection"]["rows"]
+        if sel_rows:
+            idx_list = sel_rows[0]
+            ligne_sel = df_sorted.iloc[idx_list]
+            vrai_idx = df_sorted.index[idx_list]
+            path_f = str(ligne_sel["Justificatif"])
 
-                st.markdown(f"🛠️ **Actions sur : {ligne['Commentaire']}**")
-                cv, cu, cd = st.columns(3)
-                
-                with cv: # Justificatif
-                    if path_j != "Vide" and os.path.exists(path_j):
-                        with open(path_j, "rb") as f:
-                            st.download_button("👁️ Télécharger", f, file_name=os.path.basename(path_j), key=f"dl_{vrai_idx}")
-                        if st.button("🗑️ Supprimer Fichier", key=f"df_{vrai_idx}"):
-                            try: os.remove(path_j)
-                            except: pass
-                            df_compta.at[vrai_idx, "Justificatif"] = "Vide"
-                            df_compta.to_csv(COMPTA_FILE, index=False)
-                            st.rerun()
-                    else: st.warning("Pas de fichier.")
+            st.markdown(f"🛠️ **Actions sur : {ligne_sel['Commentaire']}**")
+            g1, g2, g3 = st.columns(3)
 
-                with cu: # Modification
-                    up = st.file_uploader("Modifier fichier", type=["pdf","png","jpg","jpeg"], key=f"up_{vrai_idx}")
-                    if st.button("💾 Lier fichier", key=f"sf_{vrai_idx}"):
-                        if up:
-                            fp = os.path.join("justificatifs", f"ID_{vrai_idx}_{up.name}".replace(" ","_"))
-                            with open(fp, "wb") as f: f.write(up.getbuffer())
-                            df_compta.at[vrai_idx, "Justificatif"] = fp
-                            df_compta.to_csv(COMPTA_FILE, index=False)
-                            st.rerun()
+            with g1: # Voir/Supprimer Fichier
+                if path_f != "Vide" and os.path.exists(path_f):
+                    with open(path_f, "rb") as f:
+                        st.download_button("👁️ Télécharger", f, file_name=os.path.basename(path_f), key=f"dl_{vrai_idx}")
+                    if st.button("🗑️ Supprimer Fichier", key=f"df_{vrai_idx}"):
+                        if os.path.exists(path_f): os.remove(path_f)
+                        df_compta.at[vrai_idx, "Justificatif"] = "Vide"
+                        df_compta.to_csv(COMPTA_FILE, index=False)
+                        st.rerun()
+                else: st.warning("Aucun fichier.")
 
-                with cd: # Suppression totale
-                    if st.button("🛑 SUPPRIMER LIGNE", type="primary", key=f"del_l_{vrai_idx}"):
-                        if path_j != "Vide" and os.path.exists(path_j):
-                            try: os.remove(path_j)
-                            except: pass
-                        df_compta = df_compta.drop(vrai_idx)
+            with g2: # Remplacer Fichier
+                new_up = st.file_uploader("Remplacer", type=["pdf","png","jpg","jpeg"], key=f"re_{vrai_idx}")
+                if st.button("💾 Lier", key=f"li_{vrai_idx}"):
+                    if new_up:
+                        new_p = os.path.join("justificatifs", f"MOD_{vrai_idx}_{new_up.name}")
+                        with open(new_p, "wb") as f: f.write(new_up.getbuffer())
+                        df_compta.at[vrai_idx, "Justificatif"] = new_p
                         df_compta.to_csv(COMPTA_FILE, index=False)
                         st.rerun()
 
-        st.divider()
-        # ... (Formulaire "Ajouter une opération" identique à avant) ...
+            with g3: # Supprimer Ligne
+                if st.button("🛑 SUPPRIMER LIGNE", type="primary", key=f"del_{vrai_idx}"):
+                    if path_f != "Vide" and os.path.exists(path_f):
+                        try: os.remove(path_f)
+                        except: pass
+                    df_compta = df_compta.drop(vrai_idx)
+                    df_compta.to_csv(COMPTA_FILE, index=False)
+                    st.rerun()
                 
 # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
