@@ -149,17 +149,37 @@ if check_password():
 
   # --- PAGE COMPTA ---
     elif page == "COMPTA":
-        st.title("💰 Comptabilité & Justificatifs")
+        st.title("💰 Gestion Comptable & Archive")
         
-        import os
+        import os, zipfile, io
         if not os.path.exists("justificatifs"): os.makedirs("justificatifs")
 
-        # STABILISATION : On s'assure que la colonne Justificatif ne contient que du texte
-        df_compta["Justificatif"] = df_compta["Justificatif"].fillna("Vide").astype(str)
+        # Stabilisation des données (évite les crashs des captures précédentes)
+        df_compta["Justificatif"] = df_compta["Justificatif"].astype(str).replace(["False", "nan", "None", ""], "Vide")
+
+        # --- SECTION EXPORT GLOBAL ---
+        with st.sidebar:
+            st.divider()
+            st.subheader("📦 Archives")
+            if st.button("Préparer l'export ZIP", use_container_width=True):
+                # Création du fichier ZIP en mémoire
+                buf = io.BytesIO()
+                with zipfile.ZipFile(buf, "w") as z:
+                    files = [f for f in os.listdir("justificatifs") if os.path.isfile(os.path.join("justificatifs", f))]
+                    for f in files:
+                        z.write(os.path.join("justificatifs", f), f)
+                
+                st.download_button(
+                    label="📥 Télécharger tous les justificatifs (ZIP)",
+                    data=buf.getvalue(),
+                    file_name=f"Justificatifs_Compta_{date.today()}.zip",
+                    mime="application/zip",
+                    use_container_width=True
+                )
 
         # ... (Metrics habituelles) ...
 
-        st.subheader("📝 Journal des opérations")
+        st.subheader("📝 Journal interactif")
         df_display = df_compta.sort_values(by="Date", ascending=False)
         
         selection = st.dataframe(
@@ -167,55 +187,60 @@ if check_password():
             use_container_width=True,
             on_select="rerun",
             selection_mode="single-row",
-            key="journal_interactif"
+            key="journal_v_final"
         )
 
         if selection and selection.selection.rows:
             idx = selection.selection.rows[0]
             ligne = df_display.iloc[idx]
             vrai_index = df_display.index[idx]
-            
-            st.markdown(f"📊 **Action sur : {ligne['Commentaire']}**")
+            path_justif = str(ligne["Justificatif"])
+
+            st.markdown(f"🛠️ **Actions sur : {ligne['Commentaire']}**")
             
             col_v, col_u, col_d = st.columns([1, 1, 1])
             
             with col_v:
-                # CORRECTION DU BUG : Vérification sécurisée
-                path_justif = str(ligne["Justificatif"])
+                # VERIFICATION BLINDÉE (Règle le crash TypeError de tes captures)
                 if path_justif != "Vide" and path_justif != "None" and os.path.exists(path_justif):
                     with open(path_justif, "rb") as f:
-                        st.download_button("👁️ Télécharger", f, file_name=os.path.basename(path_justif), key=f"dl_{vrai_index}")
+                        st.download_button("👁️ Voir / Télécharger", f, 
+                                         file_name=os.path.basename(path_justif),
+                                         key=f"dl_{vrai_index}")
+                    
+                    # NOUVEAU : Supprimer seulement le fichier
+                    if st.button("🗑️ Supprimer le fichier", key=f"del_f_{vrai_index}"):
+                        try: os.remove(path_justif)
+                        except: pass
+                        df_compta.at[vrai_index, "Justificatif"] = "Vide"
+                        df_compta.to_csv(COMPTA_FILE, index=False)
+                        st.rerun()
                 else:
-                    st.info("ℹ️ Aucun justificatif")
+                    st.info("Aucun justificatif")
 
             with col_u:
-                nouveau_f = st.file_uploader("Modifier le fichier", type=["pdf","png","jpg","jpeg"], key=f"up_{vrai_index}")
-                if st.button("💾 Enregistrer"):
-                    if nouveau_f:
-                        fname = f"ID_{vrai_index}_{nouveau_f.name}".replace(" ", "_")
-                        fpath = os.path.join("justificatifs", fname)
-                        with open(fpath, "wb") as f: f.write(nouveau_f.getbuffer())
+                up = st.file_uploader("Modifier le fichier", type=["pdf","png","jpg","jpeg"], key=f"up_{vrai_index}")
+                if st.button("💾 Sauvegarder fichier", key=f"save_f_{vrai_index}"):
+                    if up:
+                        fpath = os.path.join("justificatifs", f"ID_{vrai_index}_{up.name}".replace(" ","_"))
+                        with open(fpath, "wb") as f: f.write(up.getbuffer())
                         df_compta.at[vrai_index, "Justificatif"] = fpath
                         df_compta.to_csv(COMPTA_FILE, index=False)
                         st.rerun()
 
             with col_d:
-                # 1. BOUTON SUPPRIMER
-                st.write("Danger zone :")
-                if st.button("🗑️ Supprimer la ligne", type="primary", key=f"del_{vrai_index}"):
-                    # Si un fichier existe, on peut aussi le supprimer du serveur (optionnel)
+                st.write("Zone critique :")
+                if st.button("🛑 Supprimer TOUTE la ligne", type="primary", key=f"del_l_{vrai_index}"):
                     if path_justif != "Vide" and os.path.exists(path_justif):
                         try: os.remove(path_justif)
                         except: pass
-                    
-                    # Suppression de la ligne dans le DataFrame
                     df_compta = df_compta.drop(vrai_index)
                     df_compta.to_csv(COMPTA_FILE, index=False)
-                    st.success("Ligne supprimée !")
                     st.rerun()
 
         st.divider()
-        # ... (Le reste de votre code avec le formulaire d'ajout) ...
+        with st.expander("➕ Nouvelle opération"):
+            # ... (Code du formulaire d'ajout habituel) ...
 
         # 3. FORMULAIRE D'AJOUT (Nécessite du contenu pour éviter l'IndentationError)
         with st.expander("➕ Saisir une nouvelle opération"):
