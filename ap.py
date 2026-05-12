@@ -714,14 +714,13 @@ if check_password():
                             "Statut": "Passé" if d_obj < date.today() else "À venir",
                             "Payé": dict_paye.get(clef, False)
                         })
-
-        if not all_menages:
-            st.warning("⚠️ Aucun ménage n'a été trouvé dans vos fichiers de sauvegarde. Allez dans 'Détail 014' ou 'Détail 119' et cochez des cases 'Ménage' puis enregistrez.")
+if not all_menages:
+            st.warning("⚠️ Aucune donnée de ménage enregistrée. Allez dans les détails des studios pour cocher des cases.")
         else:
-            # Création du DataFrame global et TRI TOTAL
-            df_total = pd.DataFrame(all_menages).sort_values(by="Date", ascending=False)
+            # Tri et suppression des doublons éventuels
+            df_total = pd.DataFrame(all_menages).drop_duplicates(subset=['Clef']).sort_values(by="Date", ascending=False)
             
-            # Calcul financier sur TOUT ce qui est "Passé" et "Non Payé"
+            # Calculs
             df_du = df_total[(df_total["Statut"] == "Passé") & (df_total["Payé"] == False)]
             total_prestations = len(df_du) * PRIX_MENAGE_UNITAIRE
             montant_final_du = total_prestations + nouveau_montant_courses
@@ -732,24 +731,22 @@ if check_password():
             m2.metric("TOTAL DÛ", f"{montant_final_du:,.2f} €")
             m3.info(f"Détail : {total_prestations}€ (Ménages) + {nouveau_montant_courses}€ (Courses)")
 
-            # ON PREND LES 20 PLUS RÉCENTS (PEU IMPORTE LE MOIS)
             st.subheader("📋 Historique (20 dernières prestations)")
+            
+            # On prend les 20 plus récents
             df_display = df_total.head(20).copy()
             df_display["Date_Str"] = df_display["Date"].apply(lambda x: x.strftime("%d/%m/%Y"))
             
-            # Réorganisation des colonnes pour l'affichage
-            df_display = df_display[["Date_Str", "Appartement", "Statut", "Payé", "Clef"]]
-
-            def style_complet(row):
+            # Style Amélioré : Vert plus clair pour la lecture
+            def style_final(row):
                 if row["Payé"]:
-                    return ['background-color: #e6ffed; color: black'] * len(row) # VERT
+                    return ['background-color: #c6efce; color: #006100'] * len(row) # Vert "Excel"
                 if row["Statut"] == "Passé":
-                    return ['background-color: #ffcccc; color: black'] * len(row) # ROUGE
+                    return ['background-color: #ffc7ce; color: #9c0006'] * len(row) # Rouge "Excel"
                 return [''] * len(row)
 
-            # L'éditeur de données
             edited_paye = st.data_editor(
-                df_display.style.apply(style_complet, axis=1),
+                df_display.style.apply(style_final, axis=1),
                 use_container_width=True,
                 hide_index=True,
                 disabled=["Date_Str", "Appartement", "Statut", "Clef"],
@@ -758,16 +755,13 @@ if check_password():
                     "Clef": None,
                     "Payé": st.column_config.CheckboxColumn("Réglé ?")
                 },
-                key="editor_final_20"
+                key="editor_recap_20"
             )
 
-            if st.button("💾 Enregistrer les paiements"):
-                # Mise à jour du dictionnaire global avec les changements du tableau
+            if st.button("💾 Enregistrer les règlements"):
                 for _, row in edited_paye.iterrows():
                     dict_paye[row["Clef"]] = row["Payé"]
-                
-                # Sauvegarde définitive
-                final_save = pd.DataFrame([{"Clef": k, "Payé": v} for k, v in dict_paye.items()])
-                final_save.to_csv(PAIEMENTS_FILE, index=False)
-                st.success("C'est enregistré !")
+                new_save = pd.DataFrame([{"Clef": k, "Payé": v} for k, v in dict_paye.items()])
+                new_save.to_csv(PAIEMENTS_FILE, index=False)
+                st.success("Règlements mis à jour !")
                 st.rerun()
