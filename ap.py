@@ -643,44 +643,68 @@ if check_password():
             st.success("Modifications enregistrées pour le 119 (Historique conservé) !")
             st.rerun()
             
-    # --- PAGE RO 2026 ---
     elif page == "RO 2026":
         st.title("📈 Récapitulatif Opérationnel - RO 2026")
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
+        
         try:
             df_obj_014 = pd.read_csv("objectifs_014_v2.csv")
             df_obj_119 = pd.read_csv("objectifs_119_v2.csv")
             obj_an_014 = df_obj_014[df_obj_014["Année"] == 2026]["Objectif"].sum()
             obj_an_119 = df_obj_119[df_obj_119["Année"] == 2026]["Objectif"].sum()
         except:
-            obj_an_014 = 0.0
-            obj_an_119 = 0.0
+            obj_an_014 = 0.0 ; obj_an_119 = 0.0
+            
         objectif_annuel_rnm = obj_an_014 + obj_an_119
         categories = ["Nb nuits (Total)", "% occu (Total)", "P moyen (Total)", "--- RNM IMMO ---", "CA (RNM)", "CHARGES (RNM)", "FRAIS MENAGE (RNM)", "CREDIT (RNM)", "Objectif (RNM)", "% Objectif (RNM)", "NET AV IMP (RNM)", "--- EGUILLES 014 ---", "CA (014)", "FRAIS MENAGE (014)", "Objectif (014)", "% Objectif (014)", "--- EGUILLES 119 ---", "CA (119)", "CREDIT (119)", "FRAIS MENAGE (119)", "Objectif (119)", "% Objectif (119)"]
+        
         final_matrix = {cat: [0.0] * 12 for cat in categories}
         for sep in ["--- RNM IMMO ---", "--- EGUILLES 014 ---", "--- EGUILLES 119 ---"]: final_matrix[sep] = [""] * 12
+        
         df_resa['Date Arrivée'] = pd.to_datetime(df_resa['Date Arrivée'], errors='coerce')
+        
         for i, mois_nom in enumerate(mois_noms):
             m_num = i + 1
             res_m = df_resa[(df_resa['Date Arrivée'].dt.month == m_num) & (df_resa['Date Arrivée'].dt.year == 2026)]
             res_014 = res_m[res_m["Appartement"].astype(str).str.contains("14|014")]
             res_119 = res_m[res_m["Appartement"].astype(str) == "119"]
+            
             o_m_014 = df_obj_014[(df_obj_014["Année"] == 2026) & (df_obj_014["Mois"] == mois_nom)]["Objectif"].sum() if 'df_obj_014' in locals() else 0
             o_m_119 = df_obj_119[(df_obj_119["Année"] == 2026) & (df_obj_119["Mois"] == mois_nom)]["Objectif"].sum() if 'df_obj_119' in locals() else 0
-            final_matrix["CA (RNM)"][i] = res_014["Montant"].sum() + res_119["Montant"].sum()
+            
+            # Remplissage des données CA et Objectifs
+            final_matrix["CA (014)"][i] = res_014["Montant"].sum()
+            final_matrix["CA (119)"][i] = res_119["Montant"].sum()
+            final_matrix["CA (RNM)"][i] = final_matrix["CA (014)"][i] + final_matrix["CA (119)"][i]
             final_matrix["Objectif (RNM)"][i] = o_m_014 + o_m_119
             final_matrix["Objectif (014)"][i] = o_m_014
             final_matrix["Objectif (119)"][i] = o_m_119
+            # Ici tu peux ajouter tes calculs de CHARGES et CREDIT par mois si tu as les sources
+
+        # --- NOUVEAU : AFFICHAGE DES MÉTRIQUES EN HAUT ---
+        ca_total = sum(final_matrix["CA (RNM)"])
+        charges_total = sum(final_matrix["CHARGES (RNM)"]) + sum(final_matrix["FRAIS MENAGE (RNM)"])
+        credit_total = sum(final_matrix["CREDIT (RNM)"])
+        cash_flow = ca_total - charges_total - credit_total
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("💰 CA Global", f"{ca_total:,.0f} €")
+        col2.metric("📉 Charges Totales", f"{charges_total:,.0f} €")
+        col3.metric("💳 Mensualités (An)", f"{credit_total:,.0f} €")
+        col4.metric("📊 Cash Flow", f"{cash_flow:,.0f} €")
+        
+        st.divider()
+
+        # Affichage du tableau complet
         st.table(pd.DataFrame(final_matrix, index=mois_noms).T)
+        
         st.divider()
         st.subheader("🎯 Synthèse Annuelle RNM IMMO")
-        ca_total_an = sum(final_matrix["CA (RNM)"])
-        c1, c2, c3, c4 = st.columns(4)
-        c5, c6, c7, _ = st.columns(4)
-        c1.metric("CA TOTAL", f"{ca_total_an:,.2f} €")
-        c5.metric("OBJECTIF", f"{objectif_annuel_rnm:,.2f} €")
-        perc_realisation = (ca_total_an / objectif_annuel_rnm * 100) if objectif_annuel_rnm > 0 else 0
-        c6.metric("% OBJECTIF", f"{perc_realisation:.1f}%")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("CA TOTAL", f"{ca_total:,.2f} €")
+        c2.metric("OBJECTIF", f"{objectif_annuel_rnm:,.2f} €")
+        perc_realisation = (ca_total / objectif_annuel_rnm * 100) if objectif_annuel_rnm > 0 else 0
+        c3.metric("% OBJECTIF", f"{perc_realisation:.1f}%")
 
     
     # MENAGESSS
