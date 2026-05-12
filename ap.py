@@ -657,24 +657,23 @@ if check_password():
         c6.metric("% OBJECTIF", f"{perc_realisation:.1f}%")
 
 
-     # --- PAGE RÉCAPITULATIF MÉNAGES ---
-    elif page == "Ménages":
+     elif page == "Ménages":
         st.title("🧹 Récapitulatif des Ménages")
         
         PRIX_MENAGE_UNITAIRE = 20.0 
         PAIEMENTS_FILE = "statut_paiements_menages.csv"
         COURSES_FILE = "frais_courses_menages.json"
 
-        # 1. Chargement des suivis
+        # 1. Chargement des statuts de paiement existants
         if os.path.exists(PAIEMENTS_FILE):
             df_paye = pd.read_csv(PAIEMENTS_FILE)
             dict_paye = dict(zip(df_paye["Clef"], df_paye["Payé"].astype(bool)))
         else:
             dict_paye = {}
 
+        # 2. Gestion des courses
         if os.path.exists(COURSES_FILE):
             with open(COURSES_FILE, "r") as f:
-                import json
                 try: frais_ext_data = json.load(f)
                 except: frais_ext_data = {"montant_courses": 0.0}
         else:
@@ -682,58 +681,60 @@ if check_password():
 
         st.subheader("🛒 Frais Supplémentaires")
         nouveau_montant_courses = st.number_input("Montant des Courses (€)", min_value=0.0, value=float(frais_ext_data["montant_courses"]), step=1.0)
-        
         if nouveau_montant_courses != frais_ext_data["montant_courses"]:
             with open(COURSES_FILE, "w") as f:
                 json.dump({"montant_courses": nouveau_montant_courses}, f)
 
         st.divider()
 
-        # 2. COLLECTE GLOBALE (Scan complet des fichiers sans filtre de mois)
+        # 3. COLLECTE ULTIME : On scanne TOUS les fichiers de ménage du dossier
         all_menages = []
-        fichiers = {"Studio 014": "menages_manuels_014.csv", "Studio 119": "menages_manuels_119.csv"}
+        # On cherche tous les fichiers qui commencent par 'menages_manuels_'
+        fichiers_presents = [f for f in os.listdir('.') if f.startswith("menages_manuels_") and f.endswith(".csv")]
         
-        for appart, file in fichiers.items():
-            if os.path.exists(file):
-                # ICI : On lit tout le fichier d'un coup
-                df_temp = pd.read_csv(file)
-                if "Etat" in df_temp.columns:
-                    # On filtre uniquement sur ce qui est coché "True" peu importe la date
+        for file_name in fichiers_presents:
+            try:
+                df_temp = pd.read_csv(file_name)
+                # On détermine l'appartement d'après le nom du fichier (ex: 014 ou 119)
+                nom_appart = "Studio 014" if "014" in file_name else "Studio 119"
+                
+                if "Etat" in df_temp.columns and "Date" in df_temp.columns:
+                    # On ne garde que les lignes cochées (True)
                     df_checked = df_temp[df_temp["Etat"] == True].copy()
+                    
                     for _, row in df_checked.iterrows():
+                        date_str = str(row["Date"])
                         try:
-                            # Conversion de la date pour le tri et le statut
-                            d_obj = datetime.strptime(str(row["Date"]), "%Y-%m-%d").date()
-                            clef = f"{appart}_{row['Date']}"
+                            d_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+                            clef = f"{nom_appart}_{date_str}"
                             all_menages.append({
                                 "Clef": clef,
                                 "Date": d_obj,
-                                "Appartement": appart,
+                                "Appartement": nom_appart,
                                 "Statut": "Passé" if d_obj < date.today() else "À venir",
                                 "Payé": dict_paye.get(clef, False)
                             })
                         except: continue
+            except: continue
 
-        # 3. Calculs financiers
+        # 4. Traitement des données
         if all_menages:
-            # Tri par date décroissante (les plus récents en haut)
             df_reel = pd.DataFrame(all_menages).drop_duplicates(subset=['Clef']).sort_values(by="Date", ascending=False)
+            # Calcul : Ménages PASSÉS et NON PAYÉS
             df_du = df_reel[(df_reel["Statut"] == "Passé") & (df_reel["Payé"] == False)]
             total_prestations = len(df_du) * PRIX_MENAGE_UNITAIRE
         else:
             df_reel = pd.DataFrame(columns=["Clef", "Date", "Appartement", "Statut", "Payé"])
             total_prestations = 0.0
 
-        montant_final_du = total_prestations + nouveau_montant_courses
-
-        # Métriques
+        # Affichage financier
         m1, m2, m3 = st.columns(3)
         m1.metric("Ménages à régler", f"{len(df_du) if all_menages else 0}")
-        m2.metric("TOTAL DÛ", f"{montant_final_du:,.2f} €")
-        m3.info(f"Détail : {total_prestations}€ (Ménages) + {nouveau_montant_courses}€ (Courses)")
+        m2.metric("TOTAL DÛ", f"{(total_prestations + nouveau_montant_courses):,.2f} €")
+        m3.info(f"Détail : {total_prestations}€ ménages + {nouveau_montant_courses}€ courses")
 
-        # 4. Affichage du Tableau avec forçage à 20 lignes
-        st.subheader("📋 Historique (20 dernières prestations)")
+        # 5. Affichage du Tableau (20 lignes forçage)
+        st.subheader("📋 Historique Global (Tous les mois)")
         
         df_display = df_reel.head(20).copy()
         if not df_display.empty:
@@ -741,16 +742,11 @@ if check_password():
         else:
             df_display = pd.DataFrame(columns=["Date_Affichée", "Appartement", "Statut", "Payé", "Clef"])
 
-        # Remplissage automatique pour toujours avoir 20 lignes dans l'interface
+        # Compléter à 20 lignes vides pour le look
         nb_manquant = 20 - len(df_display)
         if nb_manquant > 0:
-            vides = pd.DataFrame({
-                "Date_Affichée": ["-"] * nb_manquant,
-                "Appartement": ["-"] * nb_manquant,
-                "Statut": ["-"] * nb_manquant,
-                "Payé": [False] * nb_manquant,
-                "Clef": [None] * nb_manquant
-            })
+            vides = pd.DataFrame({"Date_Affichée": ["-"]*nb_manquant, "Appartement": ["-"]*nb_manquant, 
+                                  "Statut": ["-"]*nb_manquant, "Payé": [False]*nb_manquant, "Clef": [None]*nb_manquant})
             df_final_view = pd.concat([df_display[["Date_Affichée", "Appartement", "Statut", "Payé", "Clef"]], vides], ignore_index=True)
         else:
             df_final_view = df_display[["Date_Affichée", "Appartement", "Statut", "Payé", "Clef"]]
@@ -763,23 +759,16 @@ if check_password():
 
         edited_df = st.data_editor(
             df_final_view.style.apply(style_ligne, axis=1),
-            use_container_width=True,
-            hide_index=True,
+            use_container_width=True, hide_index=True,
             disabled=["Date_Affichée", "Appartement", "Statut", "Clef"],
-            column_config={
-                "Date_Affichée": st.column_config.TextColumn("Date"),
-                "Clef": None, 
-                "Payé": st.column_config.CheckboxColumn("Réglé ?")
-            },
-            key="editor_full_history"
+            column_config={"Date_Affichée": "Date", "Clef": None, "Payé": st.column_config.CheckboxColumn("Réglé ?")},
+            key="editor_total_history"
         )
 
         if st.button("💾 Enregistrer les règlements"):
             for _, row in edited_df.iterrows():
                 if row["Clef"] is not None:
                     dict_paye[row["Clef"]] = row["Payé"]
-            
-            save_df = pd.DataFrame([{"Clef": k, "Payé": v} for k, v in dict_paye.items()])
-            save_df.to_csv(PAIEMENTS_FILE, index=False)
-            st.success("Règlements enregistrés !")
+            pd.DataFrame([{"Clef": k, "Payé": v} for k, v in dict_paye.items()]).to_csv(PAIEMENTS_FILE, index=False)
+            st.success("Enregistré !")
             st.rerun()
