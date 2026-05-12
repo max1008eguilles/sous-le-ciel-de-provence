@@ -329,13 +329,13 @@ if check_password():
         else:
             list_m_manuels = []
 
-        # --- OBJECTIFS ---
+        # --- CONFIGURATION OBJECTIFS (Expander) ---
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
         df_obj_year = df_obj_all[df_obj_all["Année"] == sel_year].copy()
         if df_obj_year.empty:
             df_obj_year = pd.DataFrame({"Année": [sel_year]*12, "Mois": mois_noms, "Objectif": [1250.0]*12})
         
-        with st.expander(f"🎯 Configurer les Objectifs du 014 pour l'année {sel_year}"):
+        with st.expander(f"🎯 Configurer les Objectifs"):
             edited_obj = st.data_editor(df_obj_year, use_container_width=True, hide_index=True,
                 column_config={"Année": None, "Mois": st.column_config.TextColumn(disabled=True), "Objectif": st.column_config.NumberColumn("Objectif (€)", format="%.2f €")})
             if st.button("💾 Sauvegarder Objectifs"):
@@ -344,15 +344,16 @@ if check_password():
                 st.rerun()
         
         st.divider()
-        
-        # --- CALCUL DES DONNÉES ---
+
+        # --- CALCUL DES DONNÉES DU MOIS ---
         first_day = date(sel_year, sel_month, 1)
         last_day = (date(sel_year, sel_month % 12 + 1, 1) - timedelta(days=1)) if sel_month < 12 else date(sel_year, 12, 31)
         days_list = [first_day + timedelta(days=i) for i in range((last_day - first_day).days + 1)]
         
         resa_014 = df_resa[df_resa["Appartement"].isin(["014", "14", 14])].copy()
-        month_data = {d: {"montant": 0.0, "menage": False, "client": ""} for d in days_list}
+        month_data = {d: {"montant": 0.0, "client": ""} for d in days_list}
         
+        # On calcule les montants par jour via les résas
         for _, r in resa_014.iterrows():
             if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
                 d_arr, d_dep = r["Date Arrivée"], r["Date Départ"]
@@ -365,83 +366,70 @@ if check_password():
                             month_data[curr]["montant"] = prix_par_nuit
                             month_data[curr]["client"] = r["Prénom_Nom"]
                         curr += timedelta(days=1)
-                    if d_dep in month_data: 
-                        month_data[d_dep]["menage"] = True
 
-        for d in month_data:
-            if str(d) in list_m_manuels:
-                month_data[d]["menage"] = True
-
-        # --- AFFICHAGE DES MÉTRIQUES ---
+        # --- MÉTRIQUES ---
         real_m = sum(v["montant"] for v in month_data.values())
         obj_m_val = edited_obj.iloc[sel_month-1]["Objectif"]
-        perc_m = (real_m / obj_m_val * 100) if obj_m_val > 0 else 0
         nuits = sum(1 for v in month_data.values() if v["montant"] > 0)
         
         m1, m2, m3, m4, m5, m6 = st.columns(6)
         m1.metric("Réalisé Mois", f"{real_m:,.2f} €")
-        m2.metric("Objectif Mois", f"{obj_m_val:,.2f} €")
-        m3.metric("% Réalisé", f"{perc_m:.1f}%")
-        m4.metric("Nb Nuits", f"{nuits} j")
-        m5.metric("Prix Moyen", f"{(real_m/nuits if nuits > 0 else 0):,.2f} €")
-        m6.metric("% Occupation", f"{(nuits/len(days_list)*100):.1f}%")
-        
-        # --- GRAPHIQUE / GLOBAL ANNUEL ---
-        st.subheader(f"Global {sel_year}")
-        col_stats, col_vide = st.columns([2, 3])
-        with col_stats:
-            obj_an = edited_obj["Objectif"].sum() 
-            real_an = sum(float(r["Montant"]) for _, r in resa_014.iterrows() if pd.notnull(r["Date Arrivée"]) and r["Date Arrivée"].year == sel_year)
-            st.metric(f"Réalisé {sel_year}", f"{real_an:,.0f} €")
-            st.write(f"Cible : {obj_an:,.0f} €")
-            st.metric("Restant", f"{max(0, obj_an - real_an):,.0f} €")
-            st.progress(min(1.0, real_an / obj_an))
+        m2.metric("Objectif", f"{obj_m_val:,.2f} €")
+        m3.metric("%", f"{(real_m/obj_m_val*100 if obj_m_val>0 else 0):.1f}%")
+        m4.metric("Nuits", f"{nuits} j")
+        m5.metric("Prix Moy.", f"{(real_m/nuits if nuits > 0 else 0):,.2f} €")
+        m6.metric("% Occ.", f"{(nuits/len(days_list)*100):.1f}%")
 
         st.divider()
 
-        # --- PLANNING & MÉNAGES (DÉPLACÉ EN BAS) ---
-        st.subheader("🧹 Planning & Ménages")
+        # --- LE TABLEAU UNIQUE (SUIVI DÉTAILLÉ) ---
+        st.subheader("📋 Suivi Détaillé & Ménages")
         
-        edit_rows = []
+        # Préparation des données pour le tableau
+        rows = []
         for d, v in month_data.items():
-            edit_rows.append({
-                "Date_Obj": d,
+            is_menage = str(d) in list_m_manuels
+            rows.append({
+                "Date_Full": d,
                 "Date": d.strftime("%d/%m"),
+                "Montant": f"{v['montant']:.2f} €" if v['montant'] > 0 else "-",
                 "Client": v["client"],
-                "Ménage": v["menage"]
+                "Ménage": is_menage
             })
         
-        df_planning = pd.DataFrame(edit_rows)
-        
-        edited_p = st.data_editor(
-            df_planning,
+        df_final = pd.DataFrame(rows)
+
+        # Fonction de style pour mettre la ligne en vert si Ménage est coché
+        def highlight_menage(row):
+            if row["Ménage"]:
+                return ['background-color: #2E8B57; color: white'] * len(row)
+            return [''] * len(row)
+
+        # Affichage avec st.data_editor pour permettre de cocher
+        # Note : On applique le style sur le dataframe avant l'édition
+        df_styled = df_final.style.apply(highlight_menage, axis=1)
+
+        edited_df = st.data_editor(
+            df_styled,
             use_container_width=True,
             hide_index=True,
-            disabled=["Date", "Client"],
+            disabled=["Date", "Montant", "Client"], # On ne peut modifier que la case Ménage
             column_config={
-                "Date_Obj": None,
-                "Ménage": st.column_config.CheckboxColumn("Ménage ?")
+                "Date_Full": None, # Caché
+                "Ménage": st.column_config.CheckboxColumn("Ménage ?", default=False),
+                "Montant": st.column_config.TextColumn("Montant"),
+                "Client": st.column_config.TextColumn("Client")
             },
-            key="editor_014_menage"
+            key="editor_unique_014"
         )
-        
-        if st.button("💾 Enregistrer les ménages 014"):
-            selected_dates = edited_p[edited_p["Ménage"] == True]["Date_Obj"].astype(str).tolist()
-            pd.DataFrame({"Date": selected_dates}).to_csv(MENAGE_014_FILE, index=False)
-            st.success("Ménages enregistrés !")
-            st.rerun()
 
-        # Tableau récapitulatif final
-        final_rows = []
-        for _, row in edited_p.iterrows():
-            final_rows.append({
-                "Date": row["Date"],
-                "Montant": f"{month_data[row['Date_Obj']]['montant']:.2f} €" if month_data[row['Date_Obj']]['montant'] > 0 else "-",
-                "Client": row["Client"],
-                "Action": "🟢 Ménage" if row["Ménage"] else ""
-            })
-        
-        st.table(pd.DataFrame(final_rows).style.apply(lambda x: ['background-color: #2E8B57; color: white' if 'Ménage' in str(x.Action) else '' for i in x], axis=1))
+        if st.button("💾 Enregistrer les modifications"):
+            # On récupère les dates où la case est cochée dans l'éditeur
+            new_menages = edited_df[edited_df["Ménage"] == True]["Date_Full"].astype(str).tolist()
+            pd.DataFrame({"Date": new_menages}).to_csv(MENAGE_014_FILE, index=False)
+            st.success("Planning mis à jour !")
+            st.rerun()
+            
     # --- PAGE DÉTAIL 119 ---
     elif page == "Détail 119":
         st.title("🏠 Détail Studio 119")
