@@ -811,50 +811,51 @@ if check_password():
 
         #RO2026
     elif page == "RO 2026":
-        st.title("📈 Pilotage Opérationnel - RNM IMMO 2026")
+        st.title("🚀 RNM IMMO - Cockpit de Pilotage 2026")
         
-        # --- 1. CHARGEMENT DES SOURCES ---
+        # --- 1. CHARGEMENT & SYNCHRONISATION DES DONNÉES ---
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
-        
+        PRIX_MENAGE = 20.0
+        CREDIT_119 = 689.72 # Tiré de ton tableau de bord patrimoine
+        CREDIT_014 = 0.0
+
         try:
-            df_obj_014 = pd.read_csv("objectifs_014_v2.csv")
+            df_obj = pd.read_csv("objectifs_014_v2.csv") # Source unique pour les deux
             df_compta = pd.read_csv("compta.csv")
         except:
-            df_obj_014 = pd.DataFrame()
-            df_compta = pd.DataFrame()
+            df_obj = pd.DataFrame() ; df_compta = pd.DataFrame()
 
-        # Paramètres fixes
-        MENSUALITE_119 = 689.72
-        PRIX_MENAGE = 20.0
+        # --- 2. STRUCTURE DU DASHBOARD ---
+        # Préparation d'un dictionnaire pour tout stocker
+        data = {
+            "CA GLOBAL (RNM)": [0.0]*12,
+            "Charges (Compta)": [0.0]*12,
+            "Ménages (014+119)": [0.0]*12,
+            "Crédits (Total)": [0.0]*12,
+            "CASH-FLOW NET": [0.0]*12,
+            "---": [""]*12, # Séparateur
+            "CA - Studio 014": [0.0]*12,
+            "Ménages - Studio 014": [0.0]*12,
+            "Objectif - Studio 014": [0.0]*12,
+            "--- ": [""]*12, # Séparateur
+            "CA - Studio 119": [0.0]*12,
+            "Ménages - Studio 119": [0.0]*12,
+            "Objectif - Studio 119": [0.0]*12,
+        }
 
-        # --- 2. INITIALISATION DE LA MATRICE DE DONNÉES ---
-        # On définit les lignes du tableau
-        categories = [
-            "--- GLOBAL RNM IMMO ---", "CA (RNM)", "CHARGES (RNM)", "MENAGES (RNM)", "CREDIT (RNM)", "CASH-FLOW (RNM)", "OBJECTIF (RNM)",
-            "--- DETAIL EGUILLES 014 ---", "CA (014)", "MENAGES (014)", "OBJECTIF (014)",
-            "--- DETAIL EGUILLES 119 ---", "CA (119)", "MENAGES (119)", "CREDIT (119)", "OBJECTIF (119)"
-        ]
-        
-        matrix = {cat: [0.0] * 12 for cat in categories}
-        # Gestion des séparateurs visuels
-        for sep in ["--- GLOBAL RNM IMMO ---", "--- DETAIL EGUILLES 014 ---", "--- DETAIL EGUILLES 119 ---"]:
-            matrix[sep] = [""] * 12
-
-        # --- 3. CALCULS MENSUELS ---
+        # --- 3. LOGIQUE DE CALCUL AUTOMATIQUE ---
         df_resa['Date Arrivée'] = pd.to_datetime(df_resa['Date Arrivée'], errors='coerce')
-        if not df_compta.empty:
-            df_compta['Date'] = pd.to_datetime(df_compta['Date'], errors='coerce')
-
-        for i, mois_nom in enumerate(mois_noms):
+        
+        for i, mois in enumerate(mois_noms):
             m_num = i + 1
             
-            # A. CA par appartement
+            # CA par studio
             res_m = df_resa[(df_resa['Date Arrivée'].dt.month == m_num) & (df_resa['Date Arrivée'].dt.year == 2026)]
-            ca_014 = res_m[res_m["Appartement"].astype(str).str.contains("14|014")]["Montant"].sum()
-            ca_119 = res_m[res_m["Appartement"].astype(str) == "119"]["Montant"].sum()
+            ca014 = res_m[res_m["Appartement"].astype(str).str.contains("14|014")]["Montant"].sum()
+            ca119 = res_m[res_m["Appartement"].astype(str) == "119"]["Montant"].sum()
             
-            # B. Ménages (comptage dans les fichiers manuels)
-            def get_menages(file, month):
+            # Ménages (Comptage auto dans les fichiers spécifiques)
+            def count_m(file, month):
                 if os.path.exists(file):
                     df = pd.read_csv(file)
                     df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
@@ -862,64 +863,56 @@ if check_password():
                     if col: return len(df[(df['Date'].dt.month == month) & (df[col] == True)]) * PRIX_MENAGE
                 return 0.0
 
-            m_014 = get_menages("menages_manuels_014.csv", m_num)
-            m_119 = get_menages("menages_manuels_119.csv", m_num)
+            m014 = count_m("menages_manuels_014.csv", m_num)
+            m119 = count_m("menages_manuels_119.csv", m_num)
             
-            # C. Charges Compta
-            ch_m = 0.0
+            # Charges fixes (Compta)
+            charge_m = 0.0
             if not df_compta.empty:
-                ch_m = df_compta[(df_compta['Date'].dt.month == m_num) & (df_compta['Date'].dt.year == 2026)]["Montant"].sum()
+                df_compta['Date'] = pd.to_datetime(df_compta['Date'], errors='coerce')
+                charge_m = df_compta[(df_compta['Date'].dt.month == m_num)]["Montant"].sum()
 
-            # D. Objectifs (119 calqué sur 014)
+            # Objectifs
             obj_m = 0.0
-            if not df_obj_014.empty:
-                obj_m = df_obj_014[(df_obj_014["Année"] == 2026) & (df_obj_014["Mois"] == mois_nom)]["Objectif"].sum()
+            if not df_obj.empty:
+                obj_m = df_obj[(df_obj["Mois"] == mois)]["Objectif"].sum()
 
-            # Remplissage de la matrice
-            matrix["CA (014)"][i] = ca_014
-            matrix["MENAGES (014)"][i] = m_014
-            matrix["OBJECTIF (014)"][i] = obj_m
-            
-            matrix["CA (119)"][i] = ca_119
-            matrix["MENAGES (119)"][i] = m_119
-            matrix["CREDIT (119)"][i] = MENSUALITE_119
-            matrix["OBJECTIF (119)"][i] = obj_m
+            # Remplissage Matrix
+            data["CA - Studio 014"][i], data["CA - Studio 119"][i] = ca014, ca119
+            data["Ménages - Studio 014"][i], data["Ménages - Studio 119"][i] = m014, m119
+            data["Objectif - Studio 014"][i], data["Objectif - Studio 119"][i] = obj_m, obj_m
             
             # Totaux RNM
-            matrix["CA (RNM)"][i] = ca_014 + ca_119
-            matrix["CHARGES (RNM)"][i] = ch_m
-            matrix["MENAGES (RNM)"][i] = m_014 + m_119
-            matrix["CREDIT (RNM)"][i] = MENSUALITE_119
-            matrix["OBJECTIF (RNM)"][i] = obj_m * 2
-            matrix["CASH-FLOW (RNM)"][i] = matrix["CA (RNM)"][i] - ch_m - matrix["MENAGES (RNM)"][i] - MENSUALITE_119
+            data["CA GLOBAL (RNM)"][i] = ca014 + ca119
+            data["Charges (Compta)"][i] = charge_m
+            data["Ménages (014+119)"][i] = m014 + m119
+            data["Crédits (Total)"][i] = CREDIT_119 + CREDIT_014
+            data["CASH-FLOW NET"][i] = data["CA GLOBAL (RNM)"][i] - charge_m - data["Ménages (014+119)"][i] - data["Crédits (Total)"][i]
 
-        # --- 4. AFFICHAGE DES TOP KPIs (ANNEAUX GLOBAUX) ---
-        total_ca = sum(matrix["CA (RNM)"])
-        total_charges = sum(matrix["CHARGES (RNM)"]) + sum(matrix["MENAGES (RNM)"])
-        total_credit = sum(matrix["CREDIT (RNM)"])
-        total_cf = sum(matrix["CASH-FLOW (RNM)"])
-        
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("💰 CA TOTAL", f"{total_ca:,.0f} €")
-        c2.metric("📉 TOTAL CHARGES", f"{total_charges:,.0f} €")
-        c3.metric("💳 TOTAL CRÉDITS", f"{total_credit:,.0f} €")
-        c4.metric("📊 CASH-FLOW NET", f"{total_cf:,.0f} €", delta=f"{total_cf:,.0f} €")
-        
+        # --- 4. AFFICHAGE DES KPI GLOBAUX ---
+        t_ca = sum(data["CA GLOBAL (RNM)"])
+        t_ch = sum(data["Charges (Compta)"]) + sum(data["Ménages (014+119)"])
+        t_cr = sum(data["Crédits (Total)"])
+        t_cf = sum(data["CASH-FLOW NET"])
+
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("💰 Chiffre d'Affaires", f"{t_ca:,.0f} €")
+        k2.metric("📉 Charges & Ménages", f"{t_ch:,.0f} €")
+        k3.metric("💳 Mensualités Annuelles", f"{t_cr:,.0f} €")
+        k4.metric("🍀 CASH-FLOW RÉEL", f"{t_cf:,.0f} €")
+
         st.divider()
 
-        # --- 5. LE TABLEAU DE BORD COMPLET ---
-        st.subheader("🗓️ Détail Mensuel Consolidé")
-        df_display = pd.DataFrame(matrix, index=mois_noms).T
+        # --- 5. TABLEAU DE BORD GÉNÉRAL ---
+        st.subheader("📊 Vision Mensuelle Consolidée")
+        df_cockpit = pd.DataFrame(data, index=mois_noms).T
         
-        # Style pour rendre le tableau lisible
-        st.table(df_display)
+        # Style pour le tableau
+        st.dataframe(df_cockpit.style.format(precision=0), use_container_width=True)
 
-        # --- 6. ANALYSE DE PERFORMANCE ---
+        # --- 6. RÉALISATION DES OBJECTIFS ---
         st.divider()
-        col_perf1, col_perf2 = st.columns(2)
-        
-        total_obj = sum(matrix["OBJECTIF (RNM)"])
-        perf_globale = (total_ca / total_obj * 100) if total_obj > 0 else 0
-        
-        col_perf1.progress(min(perf_globale/100, 1.0), text=f"Réalisation Objectif Annuel : {perf_globale:.1f}%")
-        col_perf2.write(f"**Objectif Annuel RNM :** {total_obj:,.0f} €")
+        total_obj_rnm = sum(data["Objectif - Studio 014"]) + sum(data["Objectif - Studio 119"])
+        progression = (t_ca / total_obj_rnm) if total_obj_rnm > 0 else 0
+        st.write(f"### 🎯 Performance Annuelle : {progression*100:.1f}% de l'objectif")
+        st.progress(min(progression, 1.0))
