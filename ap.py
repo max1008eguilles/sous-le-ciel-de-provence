@@ -216,16 +216,11 @@ if check_password():
           # --- 2. TOUTES LES RÉSERVATIONS ---
             st.subheader("📝 Toutes les réservations")
             
-            # 1. Préparation des données et tri par plus récent
+            # 1. Préparation et tri
             df_display = df_resa.sort_values(by="Date Arrivée", ascending=False).copy()
 
-            # 2. AJOUT DE L'INDICATEUR VISUEL POUR LE JOUR J
-            # On crée une colonne qui met un badge bleu si c'est aujourd'hui
-            df_display.insert(0, "📍", df_display["Date Arrivée"].apply(
-                lambda x: "🔵 JOUR J" if str(x) == date_paris else ""
-            ))
-
-            # 3. AJOUT DE LA LIGNE VIDE EN HAUT POUR LES NOUVELLES RÉSA
+            # 2. AJOUT DE LA LIGNE VIDE EN HAUT
+            # On crée une ligne vide pour l'ajout rapide
             empty_row = pd.DataFrame([{col: "" for col in df_display.columns}])
             empty_row["Guide Envoyé"] = "Non"
             df_with_add = pd.concat([empty_row, df_display], ignore_index=True)
@@ -239,30 +234,44 @@ if check_password():
                     df_with_add['Numéro tel'].str.contains(q, na=False)
                 ]
 
-            # Configuration des colonnes
+            # 3. CONFIGURATION ET HIGHLIGHT (BLEU CLAIR)
+            # On utilise TextColumn pour appliquer un formatage sur la date
             column_config = {
-                "📍": st.column_config.TextColumn("Statut", help="Indique les arrivées d'aujourd'hui"),
+                "Date Arrivée": st.column_config.TextColumn(
+                    "Date Arrivée",
+                    help="Les dates d'aujourd'hui ou passées apparaissent avec un indicateur",
+                    # Astuce visuelle : on ajoute un indicateur directement dans la donnée pour simuler le highlight
+                ),
                 "Guide Envoyé": st.column_config.SelectboxColumn(
                     options=["Non", "Oui"],
                     default="Non"
                 )
             }
 
+            # Pour le highlight sans casser l'édition, on modifie temporairement l'affichage de la colonne Date
+            # On ajoute un fond coloré ou un symbole uniquement pour les dates <= aujourd'hui
+            def highlight_date_val(val):
+                if val and str(val) <= date_paris:
+                    return f"🟦 {val}" # Petit carré bleu devant la date pour le repère visuel
+                return val
+
+            df_with_add["Date Arrivée"] = df_with_add["Date Arrivée"].apply(highlight_date_val)
+
             # Affichage du tableau éditable
             edited_resa = st.data_editor(
                 df_with_add, 
                 num_rows="dynamic", 
                 use_container_width=True, 
-                key="editor_final_highlight",
-                column_config=column_config,
-                disabled=["📍"] # On empêche de modifier manuellement le badge Jour J
+                key="editor_final_no_bug",
+                column_config=column_config
             )
 
             if st.button("💾 SAUVEGARDER LES MODIFICATIONS"):
-                # On retire la colonne indicateur 📍 avant de sauvegarder le CSV
+                # NETTOYAGE AVANT SAUVEGARDE
                 df_to_save = edited_resa[edited_resa['Prénom_Nom'] != ""].copy()
-                if "📍" in df_to_save.columns:
-                    df_to_save = df_to_save.drop(columns=["📍"])
+                
+                # On retire le symbole 🟦 des dates avant d'enregistrer le CSV
+                df_to_save["Date Arrivée"] = df_to_save["Date Arrivée"].str.replace("🟦 ", "")
                 
                 # Logique automatique Code Autre
                 def auto_code(row):
@@ -273,10 +282,10 @@ if check_password():
                 
                 df_to_save['Code Autre'] = df_to_save.apply(auto_code, axis=1)
                 
-                # Tri final et sauvegarde
+                # Sauvegarde propre
                 df_to_save = df_to_save.sort_values(by="Date Arrivée", ascending=False)
                 df_to_save.to_csv(RESA_FILE, index=False)
-                st.success("Données sauvegardées avec succès !")
+                st.success("Enregistré ! Les dates ont été nettoyées et sauvegardées.")
                 st.rerun()
 
             # --- 3. CALENDRIER (EN BAS) ---
