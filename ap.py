@@ -152,95 +152,106 @@ if check_password():
         st.title("💰 Comptabilité Partagée")
         
         import os
-        # Création sécurisée du dossier de stockage
+        # Création du dossier si absent
         if not os.path.exists("justificatifs"):
             os.makedirs("justificatifs")
 
-        # Initialisation automatique des colonnes manquantes dans le CSV
-        for col in ["Justificatif", "Pointé"]:
-            if col not in df_compta.columns:
-                df_compta[col] = ""
+        # Nettoyage et initialisation des colonnes pour éviter les crashs
+        if "Justificatif" not in df_compta.columns:
+            df_compta["Justificatif"] = ""
+        df_compta["Justificatif"] = df_compta["Justificatif"].fillna("")
 
-        # --- (Garde tes colonnes de métriques CIC / Cash / Total ici) ---
+        # ... (Metrics CIC / Cash / Total ici) ...
 
         st.divider()
         col_add, col_list = st.columns([1, 2])
         
         with col_add:
             st.subheader("➕ Ajouter")
-            with st.form("f_compta", clear_on_submit=True):
+            with st.form("f_compta_final", clear_on_submit=True):
                 d = st.date_input("Date", date.today())
                 t = st.selectbox("Type", ["Revenu", "Dépense", "Crédit", "Apport", "Remboursement CCA"])
                 cpt = st.selectbox("Compte", ["CIC", "Cash"])
-                # Permet les montants négatifs pour diminuer les dépenses
-                m = st.number_input("Montant", step=0.01, format="%.2f") 
+                m = st.number_input("Montant", format="%.2f")
                 txt = st.text_input("Commentaire")
-                up_file = st.file_uploader("Justificatif", type=["pdf", "png", "jpg", "jpeg"])
+                
+                up_file = st.file_uploader("Joindre le justificatif", type=["pdf", "png", "jpg", "jpeg"])
                 
                 if st.form_submit_button("Valider"):
-                    path_to_save = ""
+                    path_sauvegarde = ""
                     if up_file:
-                        # Nom de fichier unique pour éviter les écrasements
-                        fname = f"{d}_{t}_{m}_{up_file.name}".replace(" ", "_")
-                        path_to_save = os.path.join("justificatifs", fname)
-                        with open(path_to_save, "wb") as f:
+                        # On nettoie le nom du fichier pour éviter les caractères spéciaux
+                        nom_propre = up_file.name.replace(" ", "_").replace("'", "")
+                        fname = f"{d}_{m}_{nom_propre}"
+                        path_sauvegarde = os.path.join("justificatifs", fname)
+                        with open(path_sauvegarde, "wb") as f:
                             f.write(up_file.getbuffer())
                     
-                    # Ajout sécurisé par dictionnaire (évite les erreurs de nombre de colonnes)
-                    new_data = {
+                    # Ajout propre par dictionnaire
+                    new_line = {
                         "Date": str(d), "Type": t, "Compte": cpt, "Montant": m,
-                        "Commentaire": txt, "Pointé": "Non", "Justificatif": path_to_save
+                        "Commentaire": txt, "Pointé": "Non", "Justificatif": path_sauvegarde
                     }
-                    df_updated = pd.concat([df_compta, pd.DataFrame([new_data])], ignore_index=True)
+                    
+                    df_updated = pd.concat([df_compta, pd.DataFrame([new_line])], ignore_index=True)
                     df_updated.to_csv(COMPTA_FILE, index=False)
-                    st.success("Enregistré avec succès !")
+                    st.success("✅ Enregistré sur le dashboard !")
                     st.rerun()
                     
         with col_list:
-            st.subheader("📝 Journal (Plus récents en haut)")
-            # TRI : On affiche les plus récents en haut
+            st.subheader("📝 Journal")
+            # Tri récent en haut
             df_display = df_compta.sort_values(by="Date", ascending=False).copy()
             
-            # CONFIGURATION : Correction de l'erreur StreamlitAPIException
-            # On utilise TextColumn pour le chemin du fichier pour plus de stabilité
+            # CONFIGURATION SÉCURISÉE : On définit chaque colonne pour éviter le bug visuel
             column_config = {
-                "Justificatif": st.column_config.TextColumn("📄 Justif", help="Chemin du fichier"),
-                "Pointé": st.column_config.SelectboxColumn("✅ Check", options=["Oui", "Non"]),
-                "Montant": st.column_config.NumberColumn("Montant", format="%.2f €")
+                "Justificatif": st.column_config.TextColumn("📄 Fichier", disabled=True),
+                "Montant": st.column_config.NumberColumn("Montant", format="%.2f €"),
+                "Pointé": st.column_config.SelectboxColumn("✅", options=["Oui", "Non"])
             }
 
             ed_c = st.data_editor(
                 df_display, 
                 num_rows="dynamic", 
                 use_container_width=True,
-                column_config=column_config
+                column_config=column_config,
+                key="compta_editor_v4"
             )
 
-            if st.button("💾 Sauvegarder Compta"):
+            if st.button("💾 Sauvegarder les modifications"):
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
 
-            # --- RÉCUPÉRATION / TÉLÉCHARGEMENT ---
+            # --- ZONE DE TÉLÉCHARGEMENT (FONCTIONNE SUR MOBILE) ---
             st.divider()
-            st.subheader("📂 Consulter un Justificatif")
-            # Liste des fichiers réels présents dans le journal
-            files = [f for f in df_compta["Justificatif"].unique() if f and str(f) != "nan" and os.path.exists(str(f))]
+            st.subheader("📂 Consulter / Télécharger")
             
-            if files:
-                selected_f = st.selectbox("Sélectionner une dépense :", files, format_func=lambda x: os.path.basename(x))
-                with open(selected_f, "rb") as f:
-                    # Le bouton de téléchargement est la méthode la plus fiable sur Mobile
-                    st.download_button(
-                        label="📥 Télécharger / Ouvrir le fichier",
-                        data=f,
-                        file_name=os.path.basename(selected_f),
-                        mime="application/octet-stream"
-                    )
-                    # Aperçu si c'est une image
-                    if selected_f.lower().endswith(('.png', '.jpg', '.jpeg')):
-                        st.image(selected_f, use_container_width=True)
+            # On filtre uniquement les lignes qui ont un fichier
+            liste_justifs = df_compta[df_compta["Justificatif"] != ""]["Justificatif"].tolist()
+            
+            if liste_justifs:
+                fichier_sel = st.selectbox(
+                    "Sélectionner un justificatif :", 
+                    liste_justifs, 
+                    format_func=lambda x: os.path.basename(x),
+                    key="select_download"
+                )
+                
+                if fichier_sel and os.path.exists(fichier_sel):
+                    with open(fichier_sel, "rb") as f:
+                        donnees = f.read()
+                        st.download_button(
+                            label=f"📥 Télécharger {os.path.basename(fichier_sel)}",
+                            data=donnees,
+                            file_name=os.path.basename(fichier_sel),
+                            mime="application/octet-stream",
+                            use_container_width=True
+                        )
+                        # Petit aperçu visuel si c'est une image
+                        if fichier_sel.lower().endswith(('.png', '.jpg', '.jpeg')):
+                            st.image(donnees, caption="Aperçu du justificatif")
             else:
-                st.info("Aucun justificatif disponible pour le moment.")
+                st.info("Aucun justificatif n'a été uploadé pour le moment.")
                 
 # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
