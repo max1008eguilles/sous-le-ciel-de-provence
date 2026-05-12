@@ -250,20 +250,35 @@ if check_password():
 
             st.divider()
 
-            # --- SECTION 2 : TABLEAU COMPLET ---
+           # --- SECTION 2 : TABLEAU COMPLET ---
             st.subheader("📝 Toutes les réservations")
             
-            # On affiche le reste comme avant
+            # 1. Barre de recherche (Nom ou Téléphone)
+            search_query = st.text_input("🔍 Rechercher un client ou un numéro :", "").lower()
+            
+            # 2. Préparation des données (Tri et Filtre)
+            # On trie par date d'arrivée la plus récente en haut
+            df_display = df_resa.sort_values(by="Date Arrivée", ascending=False)
+            
+            # Application du filtre de recherche si rempli
+            if search_query:
+                df_display = df_display[
+                    df_display['Prénom_Nom'].str.lower().contains(search_query, na=False) | 
+                    df_display['Numéro tel'].str.contains(search_query, na=False)
+                ]
+
+            # 3. Affichage du tableau éditable
             edited_resa = st.data_editor(
-                df_resa, 
+                df_display, 
                 num_rows="dynamic", 
-                use_container_width=True,
+                use_container_width=True, 
                 key="editor_full_list"
             )
 
             if st.button("💾 SAUVEGARDER LES MODIFICATIONS"):
+                # On sauvegarde le dataframe édité
                 edited_resa.to_csv(RESA_FILE, index=False)
-                st.success("Enregistré !")
+                st.success("Modification enregistrée et liste mise à jour !")
                 st.rerun()
 
             # --- SECTION 3 : CALENDRIER ---
