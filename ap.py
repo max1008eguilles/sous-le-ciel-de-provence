@@ -814,16 +814,19 @@ if check_password():
         st.title("📈 Récapitulatif Opérationnel - RO 2026")
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
         
-        # 1. Chargement des Objectifs (Dynamique pour 014 et 119)
+        # 1. Chargement des sources de données
         try:
             df_obj_014 = pd.read_csv("objectifs_014_v2.csv")
-            df_obj_119 = pd.read_csv("objectifs_119_v2.csv")
+            # L'objectif 119 est le même que 014 selon ta consigne
+            df_obj_119 = df_obj_014.copy() 
+            df_compta = pd.read_csv("compta.csv")
         except:
-            df_obj_014 = pd.DataFrame() ; df_obj_119 = pd.DataFrame()
+            df_obj_014 = pd.DataFrame()
+            df_obj_119 = pd.DataFrame()
+            df_compta = pd.DataFrame()
 
-        # 2. Récupération des Crédits depuis la page RNM IMMO (Paramètres patrimoine)
-        # On définit les valeurs fixes basées sur tes données patrimoine (Eguilles 119 = 689.72€)
-        MENSUALITE_119 = 689.72 
+        # 2. Paramètres Patrimoine
+        MENSUALITE_119 = 689.72
         MENSUALITE_014 = 0.0
         PRIX_MENAGE = 20.0
 
@@ -838,58 +841,65 @@ if check_password():
         final_matrix = {cat: [0.0] * 12 for cat in categories}
         for sep in ["--- RNM IMMO ---", "--- EGUILLES 014 ---", "--- EGUILLES 119 ---"]: final_matrix[sep] = [""] * 12
 
-        # 4. Boucle de calcul par mois
+        # 4. Boucle de calcul mensuelle
         df_resa['Date Arrivée'] = pd.to_datetime(df_resa['Date Arrivée'], errors='coerce')
+        if not df_compta.empty:
+            df_compta['Date'] = pd.to_datetime(df_compta['Date'], errors='coerce')
         
         for i, mois_nom in enumerate(mois_noms):
             m_num = i + 1
             
-            # --- REVENUS (CA) ---
+            # --- CA ---
             res_m = df_resa[(df_resa['Date Arrivée'].dt.month == m_num) & (df_resa['Date Arrivée'].dt.year == 2026)]
             ca_014 = res_m[res_m["Appartement"].astype(str).str.contains("14|014")]["Montant"].sum()
             ca_119 = res_m[res_m["Appartement"].astype(str) == "119"]["Montant"].sum()
             
-            # --- OBJECTIFS (Récupération croisée) ---
+            # --- CHARGES (Depuis Compta) ---
+            if not df_compta.empty:
+                # On somme les charges pour le mois concerné (on suppose une colonne 'Montant')
+                charges_m = df_compta[(df_compta['Date'].dt.month == m_num) & (df_compta['Date'].dt.year == 2026)]["Montant"].sum()
+            else:
+                charges_m = 0.0
+
+            # --- OBJECTIFS (119 calqué sur 014) ---
             obj_m_014 = df_obj_014[(df_obj_014["Année"] == 2026) & (df_obj_014["Mois"] == mois_nom)]["Objectif"].sum() if not df_obj_014.empty else 0
-            obj_m_119 = df_obj_119[(df_obj_119["Année"] == 2026) & (df_obj_119["Mois"] == mois_nom)]["Objectif"].sum() if not df_obj_119.empty else 0
+            obj_m_119 = obj_m_014 # Même objectif
             
-            # --- REMPLISSAGE MATRICE ---
-            # Eguilles 014
+            # --- REMPLISSAGE ---
+            # 014
             final_matrix["CA (014)"][i] = ca_014
             final_matrix["Objectif (014)"][i] = obj_m_014
             final_matrix["% Objectif (014)"][i] = (ca_014 / obj_m_014 * 100) if obj_m_014 > 0 else 0
             
-            # Eguilles 119
+            # 119
             final_matrix["CA (119)"][i] = ca_119
             final_matrix["CREDIT (119)"][i] = MENSUALITE_119
             final_matrix["Objectif (119)"][i] = obj_m_119
             final_matrix["% Objectif (119)"][i] = (ca_119 / obj_m_119 * 100) if obj_m_119 > 0 else 0
             
-            # Consolidation RNM IMMO
+            # RNM IMMO (Consolidation)
             final_matrix["CA (RNM)"][i] = ca_014 + ca_119
+            final_matrix["CHARGES (RNM)"][i] = charges_m
             final_matrix["CREDIT (RNM)"][i] = MENSUALITE_119 + MENSUALITE_014
             final_matrix["Objectif (RNM)"][i] = obj_m_014 + obj_m_119
             final_matrix["% Objectif (RNM)"][i] = (final_matrix["CA (RNM)"][i] / final_matrix["Objectif (RNM)"][i] * 100) if final_matrix["Objectif (RNM)"][i] > 0 else 0
             
-            # Calcul du Net (CA - Crédit - Charges - Ménages)
-            final_matrix["NET AV IMP (RNM)"][i] = final_matrix["CA (RNM)"][i] - final_matrix["CREDIT (RNM)"][i]
+            # NET AV IMP (CA - Charges - Crédit - Ménages prévus)
+            final_matrix["NET AV IMP (RNM)"][i] = final_matrix["CA (RNM)"][i] - charges_m - final_matrix["CREDIT (RNM)"][i]
 
-        # --- 5. AFFICHAGE DES MÉTRIQUES KPI (EN HAUT) ---
+        # --- 5. KPI EN HAUT ---
         total_ca = sum(final_matrix["CA (RNM)"])
+        total_charges = sum(final_matrix["CHARGES (RNM)"])
         total_mensualites = sum(final_matrix["CREDIT (RNM)"])
-        # Pour les charges, on peut sommer la ligne CHARGES si elle est remplie
-        total_charges = sum([x for x in final_matrix["CHARGES (RNM)"] if isinstance(x, (int, float))])
-        total_cashflow = total_ca - total_mensualites - total_charges
+        total_cashflow = sum(final_matrix["NET AV IMP (RNM)"])
 
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("💰 CA Global", f"{total_ca:,.0f} €")
-        col2.metric("📉 Charges Totales", f"{total_charges:,.0f} €")
-        col3.metric("💳 Mensualités (An)", f"{total_mensualites:,.0f} €")
-        col4.metric("📊 Cash Flow", f"{total_cashflow:,.0f} €")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("💰 CA Global", f"{total_ca:,.0f} €")
+        c2.metric("📉 Charges (Compta)", f"{total_charges:,.0f} €")
+        c3.metric("💳 Mensualités (An)", f"{total_mensualites:,.0f} €")
+        c4.metric("📊 Cash Flow", f"{total_cashflow:,.0f} €")
         
         st.divider()
 
-        # 6. AFFICHAGE DU TABLEAU CONSOLIDÉ
-        # On supprime tout ce qui était "Synthèse Annuelle" en bas pour éviter le doublon
-        df_final_table = pd.DataFrame(final_matrix, index=mois_noms).T
-        st.table(df_final_table)
+        # 6. TABLEAU (SANS DOUBLONS)
+        st.table(pd.DataFrame(final_matrix, index=mois_noms).T)
