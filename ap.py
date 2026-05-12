@@ -11,6 +11,15 @@ from streamlit_calendar import calendar
 # --- CONFIG DE LA PAGE ---
 st.set_page_config(page_title="RNM IMMO - Expert", layout="wide")
 
+MENAGE_014_FILE = "menages_manuels_014.csv"
+
+def load_menages_014():
+    if os.path.exists(MENAGE_014_FILE):
+        return pd.read_csv(MENAGE_014_FILE)
+    return pd.DataFrame(columns=["Date"])
+
+df_menages_014 = load_menages_014()
+
 # --- SÉCURITÉ ---
 def check_password():
     def password_entered():
