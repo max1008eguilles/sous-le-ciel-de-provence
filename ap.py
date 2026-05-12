@@ -662,9 +662,9 @@ if check_password():
         st.title("🧹 Récapitulatif des Ménages")
         
         # --- CONFIGURATION ---
-        PRIX_MENAGE_UNITAIRE = 20.0 # Nouveau tarif demandé
+        PRIX_MENAGE_UNITAIRE = 20.0 
         PAIEMENTS_FILE = "statut_paiements_menages.csv"
-        COURSES_FILE = "frais_courses_menages.json" # Pour mémoriser le montant des courses saisi
+        COURSES_FILE = "frais_courses_menages.json"
 
         # 1. Charger l'historique des paiements
         if os.path.exists(PAIEMENTS_FILE):
@@ -673,7 +673,7 @@ if check_password():
         else:
             dict_paye = {}
 
-        # 2. Charger/Gérer le montant des courses (persistance simple)
+        # 2. Charger le montant des courses
         if os.path.exists(COURSES_FILE):
             with open(COURSES_FILE, "r") as f:
                 import json
@@ -682,26 +682,21 @@ if check_password():
         else:
             frais_ext_data = {"montant_courses": 0.0}
 
-        # --- ZONE DE SAISIE MANUELLE ---
-        with st.container():
-            st.subheader("🛒 Frais Supplémentaires")
-            col_input, col_info = st.columns([1, 2])
-            nouveau_montant_courses = col_input.number_input(
-                "Montant des Courses (€)", 
-                min_value=0.0, 
-                value=float(frais_ext_data["montant_courses"]),
-                step=1.0,
-                help="Saisissez ici le montant à rajouter pour les courses effectuées."
-            )
-            col_info.info(f"Le montant de {nouveau_montant_courses}€ sera ajouté au total dû.")
-            
-            if nouveau_montant_courses != frais_ext_data["montant_courses"]:
-                with open(COURSES_FILE, "w") as f:
-                    json.dump({"montant_courses": nouveau_montant_courses}, f)
+        # ZONE DE SAISIE COURSES
+        st.subheader("🛒 Frais Supplémentaires")
+        nouveau_montant_courses = st.number_input(
+            "Montant des Courses (€)", 
+            min_value=0.0, 
+            value=float(frais_ext_data["montant_courses"]),
+            step=1.0
+        )
+        if nouveau_montant_courses != frais_ext_data["montant_courses"]:
+            with open(COURSES_FILE, "w") as f:
+                json.dump({"montant_courses": nouveau_montant_courses}, f)
 
         st.divider()
 
-        # 3. Collecter les ménages cochés (014 et 119)
+        # 3. COLLECTE GLOBALE (SANS LIMITE DE MOIS)
         all_menages = []
         fichiers_appart = {
             "Studio 014": "menages_manuels_014.csv",
@@ -711,40 +706,40 @@ if check_password():
         for appart, file in fichiers_appart.items():
             if os.path.exists(file):
                 df_m = pd.read_csv(file)
+                # On s'assure que "Etat" existe et on ne prend que les cochés
                 if "Etat" in df_m.columns:
                     df_m_checked = df_m[df_m["Etat"] == True].copy()
                     for _, row in df_m_checked.iterrows():
-                        d = datetime.strptime(row["Date"], "%Y-%m-%d").date()
+                        d_obj = datetime.strptime(row["Date"], "%Y-%m-%d").date()
                         clef = f"{appart}_{row['Date']}"
                         all_menages.append({
                             "Clef": clef,
-                            "Date": d,
+                            "Date": d_obj,
                             "Appartement": appart,
-                            "Statut": "Passé" if d < date.today() else "À venir",
+                            "Statut": "Passé" if d_obj < date.today() else "À venir",
                             "Payé": dict_paye.get(clef, False)
                         })
 
         if not all_menages:
             st.info("Aucun ménage n'est coché dans les fiches détails.")
         else:
-            # On trie et on ne garde que les 20 derniers
+            # ON TRIE TOUT PAR DATE (DU PLUS RÉCENT AU PLUS ANCIEN)
             df_total = pd.DataFrame(all_menages).sort_values(by="Date", ascending=False)
-            df_recent = df_total.head(20).copy()
-
-            # 4. Calculs financiers
+            
+            # CALCUL DES MONTANTS SUR TOUS LES MÉNAGES PASSÉS NON PAYÉS
             df_du = df_total[(df_total["Statut"] == "Passé") & (df_total["Payé"] == False)]
             total_prestations = len(df_du) * PRIX_MENAGE_UNITAIRE
             montant_final_du = total_prestations + nouveau_montant_courses
 
+            # AFFICHAGE DES MÉTRIQUES
             m1, m2, m3 = st.columns(3)
-            m1.metric("Ménages à payer", f"{len(df_du)}")
-            m2.metric("Total à régler", f"{montant_final_du:,.2f} €", 
-                      delta=f"+{nouveau_montant_courses}€ courses" if nouveau_montant_courses > 0 else None)
+            m1.metric("Ménages à payer (total historique)", f"{len(df_du)}")
+            m2.metric("Total à régler", f"{montant_final_du:,.2f} €")
             m3.write(f"**Détail :**\n- Prestations: {total_prestations}€\n- Courses: {nouveau_montant_courses}€")
 
-            st.subheader("📋 20 derniers ménages (cochés dans les détails)")
-            
-            df_display = df_recent.copy()
+            # AFFICHAGE DES 20 DERNIERS (PEU IMPORTE LE MOIS)
+            st.subheader("📋 Les 20 dernières prestations cochées")
+            df_display = df_total.head(20).copy()
             df_display["Date"] = df_display["Date"].apply(lambda x: x.strftime("%d/%m/%Y"))
             
             def color_paye(row):
@@ -761,15 +756,15 @@ if check_password():
                     "Clef": None,
                     "Payé": st.column_config.CheckboxColumn("Réglé ?")
                 },
-                key="editor_paye_global"
+                key="editor_paye_global_v2"
             )
 
             if st.button("💾 Enregistrer les règlements"):
-                # On met à jour l'historique complet avec les modifs du tableau récent
+                # On met à jour notre dictionnaire de paiements avec les cases du tableau
                 for _, row in edited_paye.iterrows():
                     dict_paye[row["Clef"]] = row["Payé"]
                 
-                # Sauvegarde du dictionnaire complet
+                # Sauvegarde globale
                 new_save_df = pd.DataFrame([{"Clef": k, "Payé": v} for k, v in dict_paye.items()])
                 new_save_df.to_csv(PAIEMENTS_FILE, index=False)
                 st.success("Règlements enregistrés !")
