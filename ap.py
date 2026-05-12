@@ -147,24 +147,28 @@ if check_password():
                     fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net Bien'] + (row['Capital Restant']/2), text=f"<b>{row['Capital Restant']:,.0f}€</b><br>{row['% Dette']:.1f}%", showarrow=False)
             st.plotly_chart(fig, use_container_width=True)
 
-    # --- PAGE COMPTA ---
+   # --- PAGE COMPTA ---
     elif page == "COMPTA":
         st.title("💰 Comptabilité - RNM IMMO")
         c1, c2, c3 = st.columns(3)
         c1.metric("Montant CIC", f"{solde_cic:,.2f} €")
         c2.metric("Montant Cash", f"{solde_cash_physique:,.2f} €")
         c3.metric("TOTAL TRESORERIE", f"{total_treso_dynamique:,.2f} €")
+        
         if not df_compta.empty:
             st.divider(); st.subheader("📊 Analyse Financière")
             df_calc = df_compta.copy()
             df_calc['Date'] = pd.to_datetime(df_calc['Date'])
             df_calc['Année'] = df_calc['Date'].dt.strftime('%Y')
             df_calc['Mois'] = df_calc['Date'].dt.strftime('%m/%Y')
+            
             recap_y = df_calc.groupby(['Année', 'Type'])['Montant'].sum().unstack(fill_value=0)
             recap_m = df_calc.groupby(['Mois', 'Type', 'Année'])['Montant'].sum().unstack(level=1, fill_value=0)
+            
             for col in ["Revenu", "Dépense", "Crédit"]:
                 if col not in recap_y.columns: recap_y[col] = 0.0
                 if col not in recap_m.columns: recap_m[col] = 0.0
+            
             final_rows = []
             for a in sorted(df_calc['Année'].unique(), reverse=True):
                 val_y = recap_y.loc[a]
@@ -172,26 +176,34 @@ if check_password():
                 mes_mois = recap_m.xs(a, level='Année').sort_index(ascending=False)
                 for m, val_m in mes_mois.iterrows():
                     final_rows.append({"Période": m, "Revenus": val_m["Revenu"], "Charges": val_m["Dépense"], "Crédit": val_m["Crédit"], "Cash Flow": val_m["Revenu"]-val_m["Dépense"]-val_m["Crédit"]})
+            
             st.table(pd.DataFrame(final_rows).style.format("{:,.2f} €", subset=["Revenus", "Charges", "Crédit", "Cash Flow"]))
+        
         st.divider()
         col_add, col_list = st.columns([1, 2])
+        
         with col_add:
             st.subheader("➕ Ajouter")
             with st.form("f_compta", clear_on_submit=True):
                 d = st.date_input("Date", date.today())
                 t = st.selectbox("Type", ["Revenu", "Dépense", "Crédit"])
                 cpt = st.selectbox("Compte", ["CIC", "Cash"])
-                m = st.number_input("Montant", min_value=0.0)
+                
+                # MODIFICATION ICI : On enlève min_value=0.0 pour autoriser les dépenses négatives
+                m = st.number_input("Montant", format="%.2f")
+                
                 txt = st.text_input("Commentaire")
                 if st.form_submit_button("Valider"):
                     new = pd.DataFrame([[d, t, cpt, m, txt, False]], columns=df_compta.columns)
                     pd.concat([df_compta, new], ignore_index=True).to_csv(COMPTA_FILE, index=False)
                     st.rerun()
+                    
         with col_list:
             st.subheader("📝 Journal")
             ed_c = st.data_editor(df_compta, num_rows="dynamic", use_container_width=True)
             if st.button("💾 Sauvegarder Compta"):
                 ed_c.to_csv(COMPTA_FILE, index=False)
+                st.rerun()
                 st.rerun()
 # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
