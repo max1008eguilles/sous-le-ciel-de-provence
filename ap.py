@@ -460,12 +460,25 @@ if check_password():
         )
 
         if st.button("💾 Enregistrer le planning"):
-            save_df = pd.DataFrame({
+            # 1. Charger l'existant pour ne pas perdre les autres mois
+            if os.path.exists(MENAGE_014_FILE):
+                df_global = pd.read_csv(MENAGE_014_FILE)
+            else:
+                df_global = pd.DataFrame(columns=["Date", "Etat"])
+
+            # 2. Préparer les données du mois actuel
+            df_month = pd.DataFrame({
                 "Date": edited_df["Date_Full"],
                 "Etat": edited_df["Ménage"]
             })
-            save_df.to_csv(MENAGE_014_FILE, index=False)
-            st.success("Modifications enregistrées !")
+
+            # 3. Fusionner : On enlève les dates du mois en cours de l'historique et on ajoute les nouvelles
+            df_global = df_global[~df_global["Date"].isin(df_month["Date"])]
+            df_final = pd.concat([df_global, df_month], ignore_index=True)
+
+            # 4. Sauvegarder le tout
+            df_final.to_csv(MENAGE_014_FILE, index=False)
+            st.success("Modifications enregistrées (Historique conservé) !")
             st.rerun()
             
     # --- PAGE DÉTAIL 119 ---
@@ -609,12 +622,25 @@ if check_password():
         )
 
         if st.button("💾 Enregistrer le planning 119"):
-            save_df = pd.DataFrame({
+            # 1. Charger l'existant
+            if os.path.exists(MENAGE_119_FILE):
+                df_global = pd.read_csv(MENAGE_119_FILE)
+            else:
+                df_global = pd.DataFrame(columns=["Date", "Etat"])
+
+            # 2. Préparer les données du mois actuel
+            df_month = pd.DataFrame({
                 "Date": edited_df["Date_Full"],
                 "Etat": edited_df["Ménage"]
             })
-            save_df.to_csv(MENAGE_119_FILE, index=False)
-            st.success("Modifications enregistrées pour le 119 !")
+
+            # 3. Fusionner
+            df_global = df_global[~df_global["Date"].isin(df_month["Date"])]
+            df_final = pd.concat([df_global, df_month], ignore_index=True)
+
+            # 4. Sauvegarder
+            df_final.to_csv(MENAGE_119_FILE, index=False)
+            st.success("Modifications enregistrées pour le 119 (Historique conservé) !")
             st.rerun()
             
     # --- PAGE RO 2026 ---
