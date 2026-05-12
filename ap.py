@@ -321,13 +321,18 @@ if check_password():
     elif page == "Détail 014":
         st.title("🏠 Détail Studio 014")
         
-        # --- LOGIQUE MÉNAGES MANUELS ---
+        # --- LOGIQUE MÉNAGES ---
         MENAGE_014_FILE = "menages_manuels_014.csv"
+        
+        # On charge l'état enregistré des ménages
         if os.path.exists(MENAGE_014_FILE):
-            df_m_manuels = pd.read_csv(MENAGE_014_FILE)
-            list_m_manuels = df_m_manuels["Date"].tolist()
+            df_m_save = pd.read_csv(MENAGE_014_FILE)
+            # On stocke sous forme de dictionnaire {date: bool} pour un accès rapide
+            dict_menages = dict(zip(df_m_save["Date"], df_m_save["Etat"].astype(bool)))
+            has_history = True
         else:
-            list_m_manuels = []
+            dict_menages = {}
+            has_history = False
 
         # --- CONFIGURATION OBJECTIFS (Expander) ---
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
@@ -351,9 +356,8 @@ if check_password():
         days_list = [first_day + timedelta(days=i) for i in range((last_day - first_day).days + 1)]
         
         resa_014 = df_resa[df_resa["Appartement"].isin(["014", "14", 14])].copy()
-        month_data = {d: {"montant": 0.0, "client": ""} for d in days_list}
+        month_data = {d: {"montant": 0.0, "client": "", "auto_menage": False} for d in days_list}
         
-        # On calcule les montants par jour via les résas
         for _, r in resa_014.iterrows():
             if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
                 d_arr, d_dep = r["Date Arrivée"], r["Date Départ"]
@@ -366,6 +370,9 @@ if check_password():
                             month_data[curr]["montant"] = prix_par_nuit
                             month_data[curr]["client"] = r["Prénom_Nom"]
                         curr += timedelta(days=1)
+                    # Détection automatique de la fin de résa
+                    if d_dep in month_data:
+                        month_data[d_dep]["auto_menage"] = True
 
         # --- MÉTRIQUES ---
         real_m = sum(v["montant"] for v in month_data.values())
@@ -375,59 +382,60 @@ if check_password():
         m1, m2, m3, m4, m5, m6 = st.columns(6)
         m1.metric("Réalisé Mois", f"{real_m:,.2f} €")
         m2.metric("Objectif", f"{obj_m_val:,.2f} €")
-        m3.metric("%", f"{(real_m/obj_m_val*100 if obj_m_val>0 else 0):.1f}%")
+        m3.metric("%", f"{(real_m/obj_m_val*100 if obj_m_val>0 else 0):|1f}%")
         m4.metric("Nuits", f"{nuits} j")
         m5.metric("Prix Moy.", f"{(real_m/nuits if nuits > 0 else 0):,.2f} €")
         m6.metric("% Occ.", f"{(nuits/len(days_list)*100):.1f}%")
 
         st.divider()
 
-        # --- LE TABLEAU UNIQUE (SUIVI DÉTAILLÉ) ---
+        # --- LE TABLEAU UNIQUE ---
         st.subheader("📋 Suivi Détaillé & Ménages")
         
-        # Préparation des données pour le tableau
         rows = []
         for d, v in month_data.items():
-            is_menage = str(d) in list_m_manuels
+            d_str = str(d)
+            # Logique : Si on a déjà enregistré, on prend la valeur du fichier.
+            # Sinon, on prend la valeur automatique de fin de résa.
+            if has_history:
+                is_checked = dict_menages.get(d_str, False)
+            else:
+                is_checked = v["auto_menage"]
+                
             rows.append({
-                "Date_Full": d,
+                "Date_Full": d_str,
                 "Date": d.strftime("%d/%m"),
                 "Montant": f"{v['montant']:.2f} €" if v['montant'] > 0 else "-",
                 "Client": v["client"],
-                "Ménage": is_menage
+                "Ménage": is_checked
             })
         
         df_final = pd.DataFrame(rows)
 
-        # Fonction de style pour mettre la ligne en vert si Ménage est coché
+        # Style visuel (Ligne verte si coché)
         def highlight_menage(row):
-            if row["Ménage"]:
-                return ['background-color: #2E8B57; color: white'] * len(row)
-            return [''] * len(row)
-
-        # Affichage avec st.data_editor pour permettre de cocher
-        # Note : On applique le style sur le dataframe avant l'édition
-        df_styled = df_final.style.apply(highlight_menage, axis=1)
+            return ['background-color: #2E8B57; color: white'] * len(row) if row["Ménage"] else [''] * len(row)
 
         edited_df = st.data_editor(
-            df_styled,
+            df_final.style.apply(highlight_menage, axis=1),
             use_container_width=True,
             hide_index=True,
-            disabled=["Date", "Montant", "Client"], # On ne peut modifier que la case Ménage
+            disabled=["Date", "Montant", "Client"],
             column_config={
-                "Date_Full": None, # Caché
-                "Ménage": st.column_config.CheckboxColumn("Ménage ?", default=False),
-                "Montant": st.column_config.TextColumn("Montant"),
-                "Client": st.column_config.TextColumn("Client")
+                "Date_Full": None,
+                "Ménage": st.column_config.CheckboxColumn("Ménage ?", default=False)
             },
             key="editor_unique_014"
         )
 
         if st.button("💾 Enregistrer les modifications"):
-            # On récupère les dates où la case est cochée dans l'éditeur
-            new_menages = edited_df[edited_df["Ménage"] == True]["Date_Full"].astype(str).tolist()
-            pd.DataFrame({"Date": new_menages}).to_csv(MENAGE_014_FILE, index=False)
-            st.success("Planning mis à jour !")
+            # On enregistre l'état de CHAQUE ligne (pour mémoriser les décochés)
+            save_data = pd.DataFrame({
+                "Date": edited_df["Date_Full"],
+                "Etat": edited_df["Ménage"]
+            })
+            save_data.to_csv(MENAGE_014_FILE, index=False)
+            st.success("Planning et préférences enregistrés !")
             st.rerun()
             
     # --- PAGE DÉTAIL 119 ---
