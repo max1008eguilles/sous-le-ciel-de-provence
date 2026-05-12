@@ -691,6 +691,7 @@ if check_password():
         PRIX_MENAGE_UNITAIRE = 20.0 
         PAIEMENTS_FILE = "statut_paiements_menages.csv"
         COURSES_FILE = "frais_courses.csv"
+        ENVOYES_FILE = "menages_envoyes.csv" # Fichier pour suivre les notifications
 
         # 1. Chargement des données
         if os.path.exists(PAIEMENTS_FILE):
@@ -699,6 +700,12 @@ if check_password():
                 dict_paye = dict(zip(df_p["Clef"], df_p["Payé"].astype(bool)))
             except: dict_paye = {}
         else: dict_paye = {}
+
+        # Chargement de l'historique des envois WhatsApp
+        if os.path.exists(ENVOYES_FILE):
+            try: list_envoyes = pd.read_csv(ENVOYES_FILE)["Clef"].tolist()
+            except: list_envoyes = []
+        else: list_envoyes = []
 
         all_data = []
         sources = {"Studio 014": "menages_manuels_014.csv", "Studio 119": "menages_manuels_119.csv"}
@@ -718,7 +725,8 @@ if check_password():
                                 all_data.append({
                                     "Clef": clef, "Date": d_obj, "Appartement": appt_name,
                                     "Statut": "Passé" if d_obj < date.today() else "À venir",
-                                    "Payé": dict_paye.get(clef, False)
+                                    "Payé": dict_paye.get(clef, False),
+                                    "Deja_Envoye": clef in list_envoyes
                                 })
                         except: continue
 
@@ -734,7 +742,7 @@ if check_password():
             total_prestations = len(df_du) * PRIX_MENAGE_UNITAIRE
             total_global_du = total_prestations + montant_courses
         else:
-            df_total = pd.DataFrame(columns=["Clef", "Date", "Appartement", "Statut", "Payé"])
+            df_total = pd.DataFrame(columns=["Clef", "Date", "Appartement", "Statut", "Payé", "Deja_Envoye"])
             total_prestations = 0.0 ; total_global_du = montant_courses
 
         m1, m2, m3 = st.columns(3)
@@ -756,7 +764,6 @@ if check_password():
         temp_resa['Date Arrivée'] = pd.to_datetime(temp_resa['Date Arrivée'], errors='coerce')
         today = date.today()
 
-        # Récupération des codes pour l'affichage et le message
         try:
             code_res_val = temp_resa[(temp_resa['Date Arrivée'].dt.month == today.month) & (temp_resa['Code Résidence'].notna())].iloc[0]['Code Résidence']
         except: code_res_val = "À vérifier"
@@ -772,35 +779,49 @@ if check_password():
         c_code2.success(f"**🚪 STUDIO 014**\n\n# 178459")
         c_code3.warning(f"**🔑 STUDIO 119** (le {date_119})\n\n# {code_119_val}")
 
-        # --- 4. BOUTON WHATSAPP AVEC RAPPEL DES CODES ---
+        # --- 4. BOUTON WHATSAPP AVEC DÉTECTION DES NOUVEAUTÉS ---
         st.write("")
         menages_futurs = df_total[df_total["Statut"] == "À venir"].sort_values(by="Date")
         
         if not menages_futurs.empty:
             texte_menages = ""
-            for _, m in menages_futurs.iterrows():
-                texte_menages += f"- {m['Appartement']} le {m['Date'].strftime('%d/%m')}\n"
+            nouvelles_clefs = []
             
-            # Message complet avec codes
+            for _, m in menages_futurs.iterrows():
+                # On ajoute un marqueur visuel si c'est la première fois qu'on l'envoie
+                prefixe = "🆕 " if not m["Deja_Envoye"] else "- "
+                texte_menages += f"{prefixe}{m['Appartement']} le {m['Date'].strftime('%d/%m')}\n"
+                nouvelles_clefs.append(m["Clef"])
+            
             message_whatsapp = (
-                f"Bonjour,\nvoici un récapitulatif des ménages à venir :\n\n"
+                f"✨ *PLANNING MÉNAGES À VENIR*\n"
+                f"_(🆕 = Nouvelle date ajoutée)_\n\n"
                 f"{texte_menages}\n"
-                f"*RAPPEL DES CODES :*\n"
+                f"🔑 *RAPPEL DES CODES :*\n"
                 f"- Résidence : {code_res_val}\n"
                 f"- Studio 014 : 178459\n"
                 f"- Studio 119 : {code_119_val} (dès le {date_119})\n\n"
-                f"Merci !"
+                f"Merci ! 🙏"
             )
             
             import urllib.parse
             msg_encoded = urllib.parse.quote(message_whatsapp)
             whatsapp_url = f"https://wa.me/?text={msg_encoded}"
             
-            st.link_button("📲 Envoyer Planning & Codes sur WhatsApp", whatsapp_url, use_container_width=True, type="primary")
+            col_wa1, col_wa2 = st.columns([3, 1])
+            with col_wa1:
+                st.link_button("📲 Envoyer Planning & Codes sur WhatsApp", whatsapp_url, use_container_width=True, type="primary")
+            with col_wa2:
+                if st.button("✅ Marquer comme notifiés"):
+                    # On enregistre toutes les clefs actuelles comme étant "déjà envoyées"
+                    pd.DataFrame({"Clef": list(set(list_envoyes + nouvelles_clefs))}).to_csv(ENVOYES_FILE, index=False)
+                    st.success("Planning actualisé !")
+                    st.rerun()
 
         # 5. HISTORIQUE
         st.divider()
         st.subheader("📋 Historique des passages")
+        # ... (reste du code identique pour l'historique)
 
         if not df_total.empty:
             df_display = df_total.copy()
