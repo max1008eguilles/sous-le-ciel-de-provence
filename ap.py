@@ -692,7 +692,7 @@ if check_password():
         PAIEMENTS_FILE = "statut_paiements_menages.csv"
         COURSES_FILE = "frais_courses.csv"
 
-        # 1. Chargement des états de paiement (Historique des boutons "Réglé")
+        # 1. Chargement des données de paiement et des fichiers sources
         if os.path.exists(PAIEMENTS_FILE):
             try:
                 df_p = pd.read_csv(PAIEMENTS_FILE)
@@ -701,18 +701,13 @@ if check_password():
         else:
             dict_paye = {}
 
-        # 2. Collecte des données des studios
         all_data = []
-        sources = {
-            "Studio 014": "menages_manuels_014.csv", 
-            "Studio 119": "menages_manuels_119.csv"
-        }
+        sources = {"Studio 014": "menages_manuels_014.csv", "Studio 119": "menages_manuels_119.csv"}
         
         for appt_name, file_path in sources.items():
             if os.path.exists(file_path):
                 df_src = pd.read_csv(file_path)
                 col_etat = next((c for c in ["Etat", "Ménage ?", "Ménage"] if c in df_src.columns), None)
-                
                 if "Date" in df_src.columns and col_etat:
                     df_checked = df_src[df_src[col_etat] == True].copy()
                     for _, row in df_checked.iterrows():
@@ -722,52 +717,13 @@ if check_password():
                             d_obj = pd.to_datetime(d_str).date()
                             if d_obj.year == 2026:
                                 all_data.append({
-                                    "Clef": clef,
-                                    "Date": d_obj,
-                                    "Appartement": appt_name,
+                                    "Clef": clef, "Date": d_obj, "Appartement": appt_name,
                                     "Statut": "Passé" if d_obj < date.today() else "À venir",
                                     "Payé": dict_paye.get(clef, False)
                                 })
                         except: continue
 
-        # 3. Récupération dynamique des CODES pour la femme de ménage
-        st.divider()
-        st.subheader("🔑 Codes d'Accès")
-        
-        # On s'assure que les dates de résa sont au bon format pour le filtre
-        temp_resa = df_resa.copy()
-        temp_resa['Date Arrivée'] = pd.to_datetime(temp_resa['Date Arrivée'], errors='coerce')
-
-        # -- Code Résidence (Mois en cours)
-        try:
-            today = date.today()
-            code_res_val = temp_resa[
-                (temp_resa['Date Arrivée'].dt.month == today.month) & 
-                (temp_resa['Date Arrivée'].dt.year == today.year) &
-                (temp_resa['Code Résidence'].str.strip() != "")
-            ].iloc[0]['Code Résidence']
-        except:
-            code_res_val = "Non défini"
-
-        # -- Code 119 (Prochaine résa)
-        try:
-            next_119 = temp_resa[
-                (temp_resa['Appartement'].astype(str) == "119") & 
-                (temp_resa['Date Arrivée'].dt.date >= today)
-            ].sort_values(by='Date Arrivée').iloc[0]
-            code_119_val = next_119['Code Studio']
-            date_119 = next_119['Date Arrivée'].strftime('%d/%m')
-        except:
-            code_119_val = "N/A"
-            date_119 = "-"
-
-        # Affichage des Box de codes
-        c_code1, c_code2, c_code3 = st.columns(3)
-        c_code1.info(f"**🏢 RÉSIDENCE** (Mai)\n\n# {code_res_val}")
-        c_code2.success(f"**🚪 STUDIO 014** (Fixe)\n\n# 178459")
-        c_code3.warning(f"**🔑 STUDIO 119** (dès le {date_119})\n\n# {code_119_val}")
-
-        # 4. Métriques Financières
+        # 2. Calcul des Métriques Financières
         if os.path.exists(COURSES_FILE):
             try: montant_courses = pd.read_csv(COURSES_FILE)["montant"].iloc[0]
             except: montant_courses = 0.0
@@ -783,22 +739,53 @@ if check_password():
             total_prestations = 0.0
             total_global_du = montant_courses
 
-        st.divider()
+        # Affichage des métriques en haut
         m1, m2, m3 = st.columns(3)
         m1.metric("Ménages à régler", len(df_du))
         m2.metric("Total Prestations", f"{total_prestations:.2f} €")
         m3.metric("TOTAL GLOBAL DÛ", f"{total_global_du:.2f} €")
 
-        # 5. Frais de Courses
-        st.write("")
+        # Frais de courses dans un expander discret
         with st.expander("🛒 Gérer les frais de courses"):
             new_montant = st.number_input("Cumul courses (€)", value=float(montant_courses), step=1.0)
             if st.button("Enregistrer Montant Courses"):
                 pd.DataFrame({"montant": [new_montant]}).to_csv(COURSES_FILE, index=False)
                 st.rerun()
 
-        # 6. Historique
+        # 3. BLOC CODES D'ACCÈS (Placé juste au-dessus du tableau)
         st.divider()
+        st.subheader("🔑 Codes d'Accès")
+        
+        temp_resa = df_resa.copy()
+        temp_resa['Date Arrivée'] = pd.to_datetime(temp_resa['Date Arrivée'], errors='coerce')
+
+        # Logique de récupération des codes
+        try:
+            today = date.today()
+            code_res_val = temp_resa[
+                (temp_resa['Date Arrivée'].dt.month == today.month) & 
+                (temp_resa['Code Résidence'].str.strip() != "")
+            ].iloc[0]['Code Résidence']
+        except: code_res_val = "N/A"
+
+        try:
+            next_119 = temp_resa[
+                (temp_resa['Appartement'].astype(str) == "119") & (temp_resa['Date Arrivée'].dt.date >= today)
+            ].sort_values(by='Date Arrivée').iloc[0]
+            code_119_val = next_119['Code Studio']
+            date_119 = next_119['Date Arrivée'].strftime('%d/%m')
+        except:
+            code_119_val = "N/A"
+            date_119 = "-"
+
+        # Affichage visuel des codes
+        c_code1, c_code2, c_code3 = st.columns(3)
+        c_code1.info(f"**🏢 RÉSIDENCE** (Mai)\n\n# {code_res_val}")
+        c_code2.success(f"**🚪 STUDIO 014** (Fixe)\n\n# 178459")
+        c_code3.warning(f"**🔑 STUDIO 119** (dès le {date_119})\n\n# {code_119_val}")
+
+        # 4. Tableau de l'Historique
+        st.write("")
         st.subheader("📋 Historique des passages")
 
         def style_rows(row):
@@ -826,7 +813,6 @@ if check_password():
             if st.button("💾 Enregistrer les règlements"):
                 for _, row in edited_df.iterrows():
                     dict_paye[row["Clef"]] = row["Payé"]
-                df_save = pd.DataFrame([{"Clef": k, "Payé": v} for k, v in dict_paye.items()])
-                df_save.to_csv(PAIEMENTS_FILE, index=False)
+                pd.DataFrame([{"Clef": k, "Payé": v} for k, v in dict_paye.items()]).to_csv(PAIEMENTS_FILE, index=False)
                 st.success("Statuts mis à jour !")
                 st.rerun()
