@@ -716,7 +716,7 @@ if check_password():
                         })
 if not all_menages:
             st.warning("⚠️ Aucune donnée de ménage enregistrée. Allez dans les détails des studios pour cocher des cases.")
-        else:
+            else:
             # Tri et suppression des doublons éventuels
             df_total = pd.DataFrame(all_menages).drop_duplicates(subset=['Clef']).sort_values(by="Date", ascending=False)
             
