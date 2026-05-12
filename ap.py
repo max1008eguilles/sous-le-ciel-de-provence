@@ -253,18 +253,19 @@ if check_password():
            # --- SECTION 2 : TABLEAU COMPLET ---
             st.subheader("📝 Toutes les réservations")
             
-            # 1. Barre de recherche (Nom ou Téléphone)
-            search_query = st.text_input("🔍 Rechercher un client ou un numéro :", "").lower()
+           # 1. Barre de recherche (Nom ou Téléphone)
+            search_query = st.text_input("🔍 Rechercher un client ou un numéro :", "")
             
             # 2. Préparation des données (Tri et Filtre)
-            # On trie par date d'arrivée la plus récente en haut
+            # On trie pour avoir les plus récents en haut
             df_display = df_resa.sort_values(by="Date Arrivée", ascending=False)
             
-            # Application du filtre de recherche si rempli
+            # Application du filtre de recherche (CORRIGÉ)
             if search_query:
+                query = search_query.lower()
                 df_display = df_display[
-                    df_display['Prénom_Nom'].str.lower().contains(search_query, na=False) | 
-                    df_display['Numéro tel'].str.contains(search_query, na=False)
+                    df_display['Prénom_Nom'].str.lower().str.contains(query, na=False) | 
+                    df_display['Numéro tel'].str.contains(query, na=False)
                 ]
 
             # 3. Affichage du tableau éditable
