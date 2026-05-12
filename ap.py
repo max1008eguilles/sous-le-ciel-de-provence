@@ -154,24 +154,35 @@ if check_password():
         import os, zipfile, io
         if not os.path.exists("justificatifs"): os.makedirs("justificatifs")
 
-        # 1. NETTOYAGE ET STABILISATION
+        # 1. NETTOYAGE ET STABILISATION DES DONNÉES
+        # On force les types pour éviter les crashs au clic
         df_compta["Justificatif"] = df_compta["Justificatif"].astype(str).replace(["False", "nan", "None", ""], "Vide")
+        
+        if "Pointé" not in df_compta.columns:
+            df_compta["Pointé"] = False
+        df_compta["Pointé"] = df_compta["Pointé"].astype(bool)
 
-        # 2. RÉTABLISSEMENT DES COMPTEURS (Somme des comptes)
-        # On calcule les soldes en fonction de ton historique
-        solde_cic = df_compta[df_compta["Compte"] == "CIC"]["Montant"].sum()
-        solde_cash_physique = df_compta[df_compta["Compte"] == "Cash"]["Montant"].sum()
-        total_treso_dynamique = solde_cic + solde_cash_physique
+        # 2. CALCULS DE TRÉSORERIE RÉELS (Sommes mathématiques)
+        def calculer_solde(df, compte):
+            temp = df[df["Compte"] == compte].copy()
+            # On additionne ce qui rentre
+            positif = temp[temp["Type"].isin(["Revenu", "Apport"])]["Montant"].sum()
+            # On soustrait ce qui sort
+            negatif = temp[temp["Type"].isin(["Dépense", "Crédit", "Remboursement CCA"])]["Montant"].sum()
+            return positif - negatif
 
+        solde_cic = calculer_solde(df_compta, "CIC")
+        solde_cash = calculer_solde(df_compta, "Cash")
+        
         c1, c2, c3 = st.columns(3)
-        c1.metric("Montant CIC", f"{solde_cic:,.2f} €")
-        c2.metric("Montant Cash", f"{solde_cash_physique:,.2f} €")
-        c3.metric("TOTAL TRESORERIE", f"{total_treso_dynamique:,.2f} €")
+        c1.metric("Compte CIC", f"{solde_cic:,.2f} €")
+        c2.metric("Espèces (Cash)", f"{solde_cash:,.2f} €")
+        c3.metric("TRÉSORERIE TOTALE", f"{(solde_cic + solde_cash):,.2f} €", delta_color="normal")
 
-        # 3. RÉTABLISSEMENT DE L'ANALYSE FINANCIÈRE (Recap, Crédit, Cash Flow)
+        # 3. ANALYSE FINANCIÈRE (Recap Mensuel / Cash Flow)
         if not df_compta.empty:
             st.divider()
-            st.subheader("📊 Analyse Financière")
+            st.subheader("📊 Analyse des Flux")
             df_calc = df_compta.copy()
             df_calc['Date'] = pd.to_datetime(df_calc['Date'])
             df_calc['Année'] = df_calc['Date'].dt.strftime('%Y')
@@ -187,91 +198,110 @@ if check_password():
             final_rows = []
             for a in sorted(df_calc['Année'].unique(), reverse=True):
                 val_y = recap_y.loc[a]
-                cf_y = val_y["Revenu"] - val_y["Dépense"] - val_y["Crédit"]
+                cf_y = (val_y["Revenu"] + val_y["Apport"]) - (val_y["Dépense"] + val_y["Crédit"] + val_y["Remboursement CCA"])
                 final_rows.append({"Période": f"TOTAL {a}", "Revenus": val_y["Revenu"], "Charges": val_y["Dépense"], "Crédit": val_y["Crédit"], "Cash Flow": cf_y})
                 
                 mes_mois = recap_m.xs(a, level='Année').sort_index(ascending=False)
                 for m, val_m in mes_mois.iterrows():
-                    cf_m = val_m["Revenu"] - val_m["Dépense"] - val_m["Crédit"]
+                    cf_m = (val_m["Revenu"] + val_m["Apport"]) - (val_m["Dépense"] + val_m["Crédit"] + val_m["Remboursement CCA"])
                     final_rows.append({"Période": m, "Revenus": val_m["Revenu"], "Charges": val_m["Dépense"], "Crédit": val_m["Crédit"], "Cash Flow": cf_m})
             
             st.table(pd.DataFrame(final_rows).style.format("{:,.2f} €", subset=["Revenus", "Charges", "Crédit", "Cash Flow"]))
 
-        # 4. EXPORT ZIP FILTRÉ (Seulement les fichiers actifs)
+        # 4. EXPORT ZIP DANS LA SIDEBAR (Fichiers actifs seulement)
         with st.sidebar:
             st.divider()
             st.subheader("📦 Archives")
-            # On ne prend que les fichiers qui existent et qui sont cités dans le CSV
-            fichiers_actifs = [f for f in df_compta["Justificatif"].unique() if f != "Vide" and os.path.exists(f)]
-            
-            if fichiers_actifs:
+            fichiers_existants = [f for f in df_compta["Justificatif"].unique() if f != "Vide" and os.path.exists(str(f))]
+            if fichiers_existants:
                 buf = io.BytesIO()
                 with zipfile.ZipFile(buf, "w") as z:
-                    for f_path in fichiers_actifs:
-                        z.write(f_path, os.path.basename(f_path))
-                
-                st.download_button(label="📥 Télécharger les justifs actifs (ZIP)", data=buf.getvalue(),
-                                 file_name=f"Justificatifs_{date.today()}.zip", mime="application/zip", use_container_width=True)
+                    for f_p in fichiers_existants:
+                        z.write(f_p, os.path.basename(f_p))
+                st.download_button("📥 Télécharger ZIP Justifs", buf.getvalue(), f"Justificatifs_{date.today()}.zip", "application/zip", use_container_width=True)
 
         st.divider()
-        st.subheader("📝 Journal des opérations")
+        st.subheader("📝 Journal & Pointage")
+        
+        # 5. TABLEAU ÉDITABLE POUR LE POINTAGE
         df_display = df_compta.sort_values(by="Date", ascending=False)
         
-        selection = st.dataframe(df_display, use_container_width=True, on_select="rerun", selection_mode="single-row", key="journal_v_total")
+        edited_df = st.data_editor(
+            df_display,
+            column_config={
+                "Pointé": st.column_config.CheckboxColumn("Pointé ✅", default=False),
+                "Justificatif": st.column_config.TextColumn("Fichier", disabled=True),
+                "Montant": st.column_config.NumberColumn(format="%.2f €")
+            },
+            disabled=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"],
+            use_container_width=True,
+            key="editor_compta_final"
+        )
+
+        if st.button("💾 Enregistrer le pointage"):
+            df_compta.update(edited_df)
+            df_compta.to_csv(COMPTA_FILE, index=False)
+            st.success("Pointage mis à jour !")
+            st.rerun()
+
+        # 6. GESTION DES FICHIERS ET SUPPRESSION (Module dynamique au clic)
+        st.info("👆 Cliquez sur une ligne ci-dessous pour GÉRER son justificatif ou la SUPPRIMER.")
+        selection = st.dataframe(df_display, on_select="rerun", selection_mode="single-row", key="file_manager")
 
         if selection and selection.selection.rows:
             idx = selection.selection.rows[0]
             ligne = df_display.iloc[idx]
-            vrai_index = df_display.index[idx]
+            vrai_idx = df_display.index[idx]
             path_j = str(ligne["Justificatif"])
 
-            st.markdown(f"🛠️ **Action : {ligne['Commentaire']}**")
-            c1, c2, c3 = st.columns(3)
+            st.markdown(f"🛠️ **Actions sur : {ligne['Commentaire']}**")
+            col_v, col_u, col_d = st.columns(3)
             
-            with c1:
+            with col_v:
                 if path_j != "Vide" and os.path.exists(path_j):
                     with open(path_j, "rb") as f:
-                        st.download_button("👁️ Télécharger", f, file_name=os.path.basename(path_j), key=f"dl_{vrai_index}")
-                    if st.button("🗑️ Supprimer Fichier", key=f"df_{vrai_index}"):
+                        st.download_button("👁️ Télécharger", f, file_name=os.path.basename(path_j), key=f"dl_{vrai_idx}")
+                    if st.button("🗑️ Supprimer Fichier", key=f"df_{vrai_idx}"):
                         try: os.remove(path_j)
                         except: pass
-                        df_compta.at[vrai_index, "Justificatif"] = "Vide"
+                        df_compta.at[vrai_idx, "Justificatif"] = "Vide"
                         df_compta.to_csv(COMPTA_FILE, index=False)
                         st.rerun()
                 else: st.warning("Pas de fichier.")
 
-            with c2:
-                up = st.file_uploader("Nouveau fichier", type=["pdf","png","jpg","jpeg"], key=f"up_{vrai_index}")
-                if st.button("💾 Lier le fichier", key=f"sf_{vrai_index}"):
-                    if up:
-                        fp = os.path.join("justificatifs", f"ID_{vrai_index}_{up.name}".replace(" ","_"))
-                        with open(fp, "wb") as f: f.write(up.getbuffer())
-                        df_compta.at[vrai_index, "Justificatif"] = fp
+            with col_u:
+                up_new = st.file_uploader("Modifier le fichier", type=["pdf","png","jpg","jpeg"], key=f"up_{vrai_idx}")
+                if st.button("💾 Lier ce fichier", key=f"sf_{vrai_idx}"):
+                    if up_new:
+                        fp = os.path.join("justificatifs", f"ID_{vrai_idx}_{up_new.name}".replace(" ","_"))
+                        with open(fp, "wb") as f: f.write(up_new.getbuffer())
+                        df_compta.at[vrai_idx, "Justificatif"] = fp
                         df_compta.to_csv(COMPTA_FILE, index=False)
                         st.rerun()
 
-            with c3:
-                if st.button("🛑 SUPPRIMER LIGNE", type="primary", key=f"dl_l_{vrai_index}"):
+            with col_d:
+                if st.button("🛑 SUPPRIMER TOUTE LA LIGNE", type="primary", key=f"dl_l_{vrai_idx}"):
                     if path_j != "Vide" and os.path.exists(path_j):
                         try: os.remove(path_j)
                         except: pass
-                    df_compta = df_compta.drop(vrai_index)
+                    df_compta = df_compta.drop(vrai_idx)
                     df_compta.to_csv(COMPTA_FILE, index=False)
                     st.rerun()
 
+        # 7. FORMULAIRE D'AJOUT
         st.divider()
-        with st.expander("➕ Saisir une nouvelle opération"):
-            with st.form("form_add"):
+        with st.expander("➕ Nouvelle opération"):
+            with st.form("new_op"):
                 ca, cb = st.columns(2)
                 d_a = ca.date_input("Date", date.today()); t_a = ca.selectbox("Type", ["Revenu", "Dépense", "Crédit", "Apport", "Remboursement CCA"])
                 cp_a = cb.selectbox("Compte", ["CIC", "Cash"]); m_a = cb.number_input("Montant", format="%.2f")
                 tx_a = st.text_input("Commentaire"); u_a = st.file_uploader("Justificatif (optionnel)", type=["pdf","png","jpg","jpeg"])
-                if st.form_submit_button("Valider l'ajout"):
+                if st.form_submit_button("Ajouter"):
                     p_a = "Vide"
                     if u_a:
                         p_a = os.path.join("justificatifs", f"NEW_{u_a.name}".replace(" ","_"))
                         with open(p_a, "wb") as f: f.write(u_a.getbuffer())
-                    new_e = pd.DataFrame([{"Date":str(d_a),"Type":t_a,"Compte":cp_a,"Montant":m_a,"Commentaire":tx_a,"Justificatif":p_a,"Pointé":"Non"}])
+                    new_e = pd.DataFrame([{"Date":str(d_a),"Type":t_a,"Compte":cp_a,"Montant":m_a,"Commentaire":tx_a,"Justificatif":p_a,"Pointé":False}])
                     pd.concat([df_compta, new_e], ignore_index=True).to_csv(COMPTA_FILE, index=False)
                     st.rerun()
                 
