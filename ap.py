@@ -149,82 +149,91 @@ if check_password():
 
   # --- PAGE COMPTA ---
     elif page == "COMPTA":
-        st.title("💰 Comptabilité Interactive")
+        st.title("💰 Comptabilité & Justificatifs")
         
-        # Nettoyage des données pour éviter les crashs précédents
+        import os
+        if not os.path.exists("justificatifs"): os.makedirs("justificatifs")
+
+        # Nettoyage automatique des données pour éviter les bugs d'affichage
         df_compta["Justificatif"] = df_compta["Justificatif"].astype(str).replace(["False", "nan", "None", ""], "Vide")
 
-        # ... (Metrics habituelles) ...
+        # --- (Garde tes metrics ici) ---
 
+        st.divider()
+        
+        # 1. TABLEAU INTERACTIF (JOURNAL)
         st.subheader("📝 Journal des opérations")
-        st.info("💡 Cliquez sur une case du tableau pour sélectionner une ligne, puis utilisez le module ci-dessous pour ajouter ou voir le justificatif.")
-
-        # 1. AFFICHAGE DU TABLEAU (Trié par date)
+        st.info("👆 Cliquez sur une ligne pour gérer son justificatif.")
+        
         df_display = df_compta.sort_values(by="Date", ascending=False)
         
-        # On utilise le data_editor avec sélection de ligne
-        event = st.dataframe(
+        # Mode sélection de ligne
+        selection = st.dataframe(
             df_display,
             use_container_width=True,
             on_select="rerun",
             selection_mode="single-row",
-            key="compta_table"
+            key="journal_interactif"
         )
 
-        # 2. MODULE DE GESTION DYNAMIQUE (Ligne sélectionnée)
-        if event and event.selection.rows:
-            # Récupération de l'index réel dans le dataframe original
-            idx_selection = event.selection.rows[0]
-            ligne_selectionnee = df_display.iloc[idx_selection]
-            vrai_index_csv = df_display.index[idx_selection]
+        # 2. MODULE DYNAMIQUE : Apparaît seulement si une ligne est sélectionnée
+        if selection and selection.selection.rows:
+            idx = selection.selection.rows[0]
+            ligne = df_display.iloc[idx]
+            vrai_index = df_display.index[idx]
             
-            st.markdown(f"### 📍 Gestion de la ligne : **{ligne_selectionnee['Commentaire']}** ({ligne_selectionnee['Montant']}€)")
+            st.markdown(f"📊 **Action sur : {ligne['Commentaire']} ({ligne['Montant']}€)**")
             
-            col_view, col_upload = st.columns(2)
-
-            with col_view:
-                st.write("**Visualisation :**")
-                path_actuel = ligne_selectionnee["Justificatif"]
-                
-                if path_actuel != "Vide" and os.path.exists(path_actuel):
-                    with open(path_actuel, "rb") as f:
-                        st.download_button(
-                            label="👁️ Ouvrir le justificatif actuel",
-                            data=f.read(),
-                            file_name=os.path.basename(path_actuel),
-                            mime="application/octet-stream"
-                        )
-                    if path_actuel.lower().endswith(('.png', '.jpg', '.jpeg')):
-                        st.image(path_actuel, width=300)
+            col_v, col_u = st.columns(2)
+            
+            with col_v:
+                if ligne["Justificatif"] != "Vide" and os.path.exists(ligne["Justificatif"]):
+                    with open(ligne["Justificatif"], "rb") as f:
+                        st.download_button("👁️ Télécharger le justificatif actuel", f, 
+                                         file_name=os.path.basename(ligne["Justificatif"]),
+                                         key=f"dl_{vrai_index}")
+                    if ligne["Justificatif"].lower().endswith(('.png', '.jpg', '.jpeg')):
+                        st.image(ligne["Justificatif"], width=250)
                 else:
-                    st.warning("⚠️ Aucun justificatif pour cette dépense.")
+                    st.warning("Aucun fichier lié.")
 
-            with col_upload:
-                st.write("**Ajouter / Remplacer :**")
-                new_file = st.file_uploader("Nouveau fichier", type=["pdf", "png", "jpg", "jpeg"], key="up_detail")
-                
+            with col_u:
+                nouveau_f = st.file_uploader("Remplacer/Ajouter un fichier", type=["pdf","png","jpg","jpeg"], key=f"up_{vrai_index}")
                 if st.button("💾 Enregistrer sur cette ligne"):
-                    if new_file:
-                        if not os.path.exists("justificatifs"): os.makedirs("justificatifs")
-                        fname = f"REF_{vrai_index_csv}_{new_file.name}".replace(" ", "_")
-                        path_save = os.path.join("justificatifs", fname)
+                    if nouveau_f:
+                        fname = f"ID_{vrai_index}_{nouveau_f.name}".replace(" ", "_")
+                        fpath = os.path.join("justificatifs", fname)
+                        with open(fpath, "wb") as f:
+                            f.write(nouveau_f.getbuffer())
                         
-                        with open(path_save, "wb") as f:
-                            f.write(new_file.getbuffer())
-                        
-                        # MISE À JOUR DE LA LIGNE EXISTANTE
-                        df_compta.at[vrai_index_csv, "Justificatif"] = path_save
+                        df_compta.at[vrai_index, "Justificatif"] = fpath
                         df_compta.to_csv(COMPTA_FILE, index=False)
-                        
-                        st.success("✅ Justificatif lié à la dépense !")
+                        st.success("C'est fait !")
                         st.rerun()
-                    else:
-                        st.error("Sélectionnez un fichier d'abord.")
 
         st.divider()
-        # On garde ton formulaire "Ajouter" en bas pour les nouvelles saisies
-        with st.expander("➕ Saisir une nouvelle opération (sans justificatif immédiat)"):
-            # ... (Ton code de formulaire habituel ici) ...
+
+        # 3. FORMULAIRE D'AJOUT (Nécessite du contenu pour éviter l'IndentationError)
+        with st.expander("➕ Saisir une nouvelle opération"):
+            with st.form("nouvelle_saisie", clear_on_submit=True):
+                c1, c2 = st.columns(2)
+                d = c1.date_input("Date", date.today())
+                t = c1.selectbox("Type", ["Revenu", "Dépense", "Crédit", "Apport", "Remboursement CCA"])
+                cpt = c2.selectbox("Compte", ["CIC", "Cash"])
+                m = c2.number_input("Montant", format="%.2f")
+                txt = st.text_input("Commentaire")
+                up = st.file_uploader("Justificatif optionnel", type=["pdf","png","jpg","jpeg"])
+                
+                if st.form_submit_button("Valider l'ajout"):
+                    p = "Vide"
+                    if up:
+                        p = os.path.join("justificatifs", f"NEW_{up.name}")
+                        with open(p, "wb") as f: f.write(up.getbuffer())
+                    
+                    new_row = pd.DataFrame([{"Date":str(d),"Type":t,"Compte":cpt,"Montant":m,"Commentaire":txt,"Justificatif":p,"Pointé":"Non"}])
+                    pd.concat([df_compta, new_row], ignore_index=True).to_csv(COMPTA_FILE, index=False)
+                    st.success("Nouvelle ligne créée !")
+                    st.rerun()
                 
 # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
