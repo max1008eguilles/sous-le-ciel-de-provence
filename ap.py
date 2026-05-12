@@ -213,13 +213,19 @@ if check_password():
 
             st.divider()
 
-            # --- 2. TOUTES LES RÉSERVATIONS ---
+          # --- 2. TOUTES LES RÉSERVATIONS ---
             st.subheader("📝 Toutes les réservations")
             
-            # Préparation du tableau : Plus récent en haut
-            df_display = df_resa.sort_values(by="Date Arrivée", ascending=False)
+            # 1. Préparation des données et tri par plus récent
+            df_display = df_resa.sort_values(by="Date Arrivée", ascending=False).copy()
 
-            # ASTUCE LIGNE VIDE EN HAUT : On crée une ligne vide et on l'ajoute au début
+            # 2. AJOUT DE L'INDICATEUR VISUEL POUR LE JOUR J
+            # On crée une colonne qui met un badge bleu si c'est aujourd'hui
+            df_display.insert(0, "📍", df_display["Date Arrivée"].apply(
+                lambda x: "🔵 JOUR J" if str(x) == date_paris else ""
+            ))
+
+            # 3. AJOUT DE LA LIGNE VIDE EN HAUT POUR LES NOUVELLES RÉSA
             empty_row = pd.DataFrame([{col: "" for col in df_display.columns}])
             empty_row["Guide Envoyé"] = "Non"
             df_with_add = pd.concat([empty_row, df_display], ignore_index=True)
@@ -233,29 +239,32 @@ if check_password():
                     df_with_add['Numéro tel'].str.contains(q, na=False)
                 ]
 
-            # Configuration pour "Non" par défaut
+            # Configuration des colonnes
             column_config = {
+                "📍": st.column_config.TextColumn("Statut", help="Indique les arrivées d'aujourd'hui"),
                 "Guide Envoyé": st.column_config.SelectboxColumn(
                     options=["Non", "Oui"],
                     default="Non"
                 )
             }
 
-            # Affichage du tableau (Note: La couleur de ligne dynamique empêche l'édition dans Streamlit)
-            # On privilégie l'ajout en haut et la stabilité
+            # Affichage du tableau éditable
             edited_resa = st.data_editor(
                 df_with_add, 
                 num_rows="dynamic", 
                 use_container_width=True, 
-                key="editor_final",
-                column_config=column_config
+                key="editor_final_highlight",
+                column_config=column_config,
+                disabled=["📍"] # On empêche de modifier manuellement le badge Jour J
             )
 
             if st.button("💾 SAUVEGARDER LES MODIFICATIONS"):
-                # Nettoyage des lignes totalement vides (celles créées par erreur en haut)
-                df_to_save = edited_resa[edited_resa['Prénom_Nom'] != ""]
+                # On retire la colonne indicateur 📍 avant de sauvegarder le CSV
+                df_to_save = edited_resa[edited_resa['Prénom_Nom'] != ""].copy()
+                if "📍" in df_to_save.columns:
+                    df_to_save = df_to_save.drop(columns=["📍"])
                 
-                # Logique Code Autre (Code Résidence sans dernier caractère)
+                # Logique automatique Code Autre
                 def auto_code(row):
                     cr = str(row.get('Code Résidence', ''))
                     if cr and len(cr) > 1:
@@ -263,15 +272,12 @@ if check_password():
                     return row.get('Code Autre', '')
                 
                 df_to_save['Code Autre'] = df_to_save.apply(auto_code, axis=1)
-                df_to_save['Guide Envoyé'] = df_to_save['Guide Envoyé'].replace("", "Non")
                 
                 # Tri final et sauvegarde
                 df_to_save = df_to_save.sort_values(by="Date Arrivée", ascending=False)
                 df_to_save.to_csv(RESA_FILE, index=False)
-                st.success("Données enregistrées et triées (Plus récentes en haut) !")
+                st.success("Données sauvegardées avec succès !")
                 st.rerun()
-
-            st.divider()
 
             # --- 3. CALENDRIER (EN BAS) ---
             st.subheader("🗓️ Vue Calendrier")
