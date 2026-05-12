@@ -95,53 +95,6 @@ if check_password():
     solde_cash_physique = get_solde("Cash")
     total_treso_dynamique = solde_cic + solde_cash_physique
 
-    # --- LOGIQUE DE NAVIGATION (À insérer après check_password) ---
-
-with st.sidebar:
-    st.image("https://via.placeholder.com/150", caption="Gestion Patrimoine") # Optionnel : Ton logo
-    st.title("📂 UNIVERS")
-    
-    # 1. Sélection de l'entité principale
-    univers = st.selectbox(
-        "Choisir une entité :",
-        ["🏠 RNM IMMO", "🏢 SCI PHOCEA", "👤 PERSO (Maxence)"]
-    )
-    
-    st.divider()
-
-    # 2. Sous-menus dynamiques
-    if univers == "🏠 RNM IMMO":
-        st.subheader("Pilotage RNM")
-        page = st.radio("Navigation", [
-            "Tableau de Bord", 
-            "RO 2026", 
-            "Détail 014", 
-            "Détail 119", 
-            "Ménages", 
-            "Compta"
-        ])
-        
-    elif univers == "🏢 SCI PHOCEA":
-        st.subheader("Gestion SCI")
-        page = st.radio("Menu", ["Vue d'ensemble", "Suivi Travaux", "Documents"])
-        
-    elif univers == "👤 PERSO (Maxence)":
-        st.subheader("Suivi Personnel")
-        page = st.radio("Menu", ["Patrimoine Global", "Budget", "Investissements"])
-    # --- SIDEBAR ---
-    with st.sidebar:
-        st.write(f"👤 **Connecté en tant que : {st.session_state.get('user_authenticated', 'Maxence')}**")
-        if st.button("Se déconnecter"):
-            st.session_state["password_correct"] = False
-            st.rerun()
-        st.divider()
-        st.title("📂 Navigation")
-        page = st.radio("Aller vers :", ["RNM IMMO", "COMPTA", "Réservations", "RO 2026", "Détail 014", "Détail 119", "Ménages"])
-        
-        if page in ["Détail 014", "Détail 119"]:
-            st.divider()
-            sel_year = st.selectbox("Année", [2025, 2026, 2027], index=1)
-            sel_month = st.selectbox("Mois", list(range(1, 13)), index=date.today().month - 1)
 
     # --- PAGE RNM IMMO ---
     if page == "RNM IMMO":
