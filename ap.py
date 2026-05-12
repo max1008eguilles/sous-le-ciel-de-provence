@@ -665,14 +665,13 @@ if check_password():
         PAIEMENTS_FILE = "statut_paiements_menages.csv"
         COURSES_FILE = "frais_courses_menages.json"
 
-        # 1. Chargement des paiements
+        # 1. Chargement des données de suivi
         if os.path.exists(PAIEMENTS_FILE):
             df_paye = pd.read_csv(PAIEMENTS_FILE)
             dict_paye = dict(zip(df_paye["Clef"], df_paye["Payé"].astype(bool)))
         else:
             dict_paye = {}
 
-        # 2. Chargement des courses
         if os.path.exists(COURSES_FILE):
             with open(COURSES_FILE, "r") as f:
                 import json
@@ -681,6 +680,7 @@ if check_password():
         else:
             frais_ext_data = {"montant_courses": 0.0}
 
+        # 2. Interface Frais Supplémentaires
         st.subheader("🛒 Frais Supplémentaires")
         nouveau_montant_courses = st.number_input("Montant des Courses (€)", min_value=0.0, value=float(frais_ext_data["montant_courses"]), step=1.0)
         
@@ -690,13 +690,14 @@ if check_password():
 
         st.divider()
 
-        # 3. Collecte de TOUS les ménages cochés (014 et 119)
+        # 3. Collecte de TOUS les ménages cochés dans les studios
         all_menages = []
-        for appart, file in {"Studio 014": "menages_manuels_014.csv", "Studio 119": "menages_manuels_119.csv"}.items():
+        fichiers = {"Studio 014": "menages_manuels_014.csv", "Studio 119": "menages_manuels_119.csv"}
+        
+        for appart, file in fichiers.items():
             if os.path.exists(file):
                 df_temp = pd.read_csv(file)
                 if "Etat" in df_temp.columns:
-                    # On garde uniquement ceux qui sont cochés (True)
                     df_checked = df_temp[df_temp["Etat"] == True].copy()
                     for _, row in df_checked.iterrows():
                         d_obj = datetime.strptime(str(row["Date"]), "%Y-%m-%d").date()
@@ -710,12 +711,10 @@ if check_password():
                         })
 
         if not all_menages:
-            st.warning("⚠️ Aucun ménage coché. Allez dans les pages 'Détail' pour cocher des ménages.")
+            st.info("Aucun ménage coché dans les détails des studios.")
         else:
-            # Tri par date décroissante
+            # Tri et calculs
             df_total = pd.DataFrame(all_menages).drop_duplicates(subset=['Clef']).sort_values(by="Date", ascending=False)
-            
-            # Calcul du montant dû
             df_du = df_total[(df_total["Statut"] == "Passé") & (df_total["Payé"] == False)]
             total_prestations = len(df_du) * PRIX_MENAGE_UNITAIRE
             montant_final_du = total_prestations + nouveau_montant_courses
@@ -725,36 +724,39 @@ if check_password():
             m2.metric("TOTAL DÛ", f"{montant_final_du:,.2f} €")
             m3.info(f"Prestations: {total_prestations}€ | Courses: {nouveau_montant_courses}€")
 
-            # Affichage des 20 derniers
+            # 4. Tableau Propre (20 derniers)
             st.subheader("📋 Historique (20 dernières prestations)")
             df_display = df_total.head(20).copy()
-            df_display["Date_Str"] = df_display["Date"].apply(lambda x: x.strftime("%d/%m/%Y"))
             
-            # Style : Vert si payé, Rouge si dû
-            def style_final(row):
+            # On ne garde que les colonnes voulues pour l'affichage
+            df_display["Date Affichée"] = df_display["Date"].apply(lambda x: x.strftime("%d/%m/%Y"))
+            df_final_view = df_display[["Date Affichée", "Appartement", "Statut", "Payé", "Clef"]]
+
+            def style_ligne(row):
                 if row["Payé"]:
-                    return ['background-color: #c6efce; color: #006100'] * len(row)
-                elif row["Statut"] == "Passé":
-                    return ['background-color: #ffc7ce; color: #9c0006'] * len(row)
+                    return ['background-color: #c6efce; color: #006100'] * len(row) # Vert
+                if row["Statut"] == "Passé":
+                    return ['background-color: #ffc7ce; color: #9c0006'] * len(row) # Rouge
                 return [''] * len(row)
 
-            edited_paye = st.data_editor(
-                df_display.style.apply(style_final, axis=1),
+            edited_df = st.data_editor(
+                df_final_view.style.apply(style_ligne, axis=1),
                 use_container_width=True,
                 hide_index=True,
-                disabled=["Date_Str", "Appartement", "Statut", "Clef"],
+                disabled=["Date Affichée", "Appartement", "Statut", "Clef"],
                 column_config={
-                    "Date_Str": st.column_config.TextColumn("Date"),
-                    "Clef": None,
+                    "Date Affichée": st.column_config.TextColumn("Date"),
+                    "Clef": None, # Cache la colonne technique
                     "Payé": st.column_config.CheckboxColumn("Réglé ?")
                 },
-                key="recap_editor_v3"
+                key="editor_clean_v4"
             )
 
-            if st.button("💾 Enregistrer les paiements"):
-                for _, row in edited_paye.iterrows():
+            if st.button("💾 Enregistrer les règlements"):
+                for _, row in edited_df.iterrows():
                     dict_paye[row["Clef"]] = row["Payé"]
-                save_df = pd.DataFrame([{"Clef": k, "Payé": v} for k, v in dict_paye.items()])
-                save_df.to_csv(PAIEMENTS_FILE, index=False)
-                st.success("Mise à jour réussie !")
+                
+                final_save = pd.DataFrame([{"Clef": k, "Payé": v} for k, v in dict_paye.items()])
+                final_save.to_csv(PAIEMENTS_FILE, index=False)
+                st.success("Règlements enregistrés !")
                 st.rerun()
