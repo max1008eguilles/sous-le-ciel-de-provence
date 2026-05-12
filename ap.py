@@ -333,9 +333,9 @@ if check_password():
                     dict_menages = dict(zip(df_m_save["Date"], df_m_save["Etat"].astype(bool)))
                     has_history = True
             except Exception:
-                pass # Sécurité si le fichier est corrompu
+                pass 
 
-        # --- OBJECTIFS (Expander) ---
+        # --- CONFIGURATION OBJECTIFS (Expander) ---
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
         df_obj_year = df_obj_all[df_obj_all["Année"] == sel_year].copy()
         if df_obj_year.empty:
@@ -351,13 +351,38 @@ if check_password():
         
         st.divider()
 
-        # --- CALCUL DES DONNÉES ---
-        first_day = date(sel_year, sel_month, 1)
-        last_day = (date(sel_year, sel_month % 12 + 1, 1) - timedelta(days=1)) if sel_month < 12 else date(sel_year, 12, 31)
-        days_list = [first_day + timedelta(days=i) for i in range((last_day - first_day).days + 1)]
-        
+        # --- CALCUL DES DONNÉES (MOIS & ANNÉE CUMULÉE) ---
+        # Données de base pour le 014
         resa_014 = df_resa[df_resa["Appartement"].isin(["014", "14", 14])].copy()
-        month_data = {d: {"montant": 0.0, "client": "", "auto_menage": False} for d in days_list}
+        
+        # 1. Calcul Annuel Cumulé (du 01/01 au dernier jour du mois sélectionné)
+        last_day_selected_month = (date(sel_year, sel_month % 12 + 1, 1) - timedelta(days=1)) if sel_month < 12 else date(sel_year, 12, 31)
+        
+        # Filtre les résas qui touchent à l'année en cours jusqu'au mois sélectionné
+        real_an_cumule = 0.0
+        nuits_an_cumule = 0
+        
+        for _, r in resa_014.iterrows():
+            if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
+                d_arr, d_dep = r["Date Arrivée"], r["Date Départ"]
+                # On ne compte que les nuitées comprises entre le 01/01 et la fin du mois choisi
+                delta = (d_dep - d_arr).days
+                if delta > 0:
+                    prix_par_nuit = float(r["Montant"]) / delta
+                    curr = d_arr
+                    while curr < d_dep:
+                        if curr.year == sel_year and curr <= last_day_selected_month:
+                            real_an_cumule += prix_par_nuit
+                            nuits_an_cumule += 1
+                        curr += timedelta(days=1)
+
+        # Objectif annuel cumulé
+        obj_an_cumule = edited_obj.iloc[:sel_month]["Objectif"].sum()
+
+        # 2. Calcul spécifique au Mois Sélectionné
+        first_day_m = date(sel_year, sel_month, 1)
+        days_list_m = [first_day_m + timedelta(days=i) for i in range((last_day_selected_month - first_day_m).days + 1)]
+        month_data = {d: {"montant": 0.0, "client": "", "auto_menage": False} for d in days_list_m}
         
         for _, r in resa_014.iterrows():
             if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
@@ -374,18 +399,28 @@ if check_password():
                     if d_dep in month_data:
                         month_data[d_dep]["auto_menage"] = True
 
-        # --- MÉTRIQUES ---
         real_m = sum(v["montant"] for v in month_data.values())
         obj_m_val = edited_obj.iloc[sel_month-1]["Objectif"]
-        nuits = sum(1 for v in month_data.values() if v["montant"] > 0)
-        
+        nuits_m = sum(1 for v in month_data.values() if v["montant"] > 0)
+
+        # --- AFFICHAGE DES MÉTRIQUES ---
+        st.subheader(f"📊 Statistiques Cumulées (Jan. à {mois_noms[sel_month-1]} {sel_year})")
+        a1, a2, a3, a4 = st.columns(4)
+        a1.metric("Réalisé Cumulé", f"{real_an_cumule:,.2f} €")
+        a2.metric("Objectif Cumulé", f"{obj_an_cumule:,.2f} €")
+        a3.metric("% vs Objectif", f"{(real_an_cumule/obj_an_cumule*100 if obj_an_cumule>0 else 0):.1f}%")
+        a4.metric("Total Nuits", f"{nuits_an_cumule} j")
+
+        st.write("") # Espacement
+
+        st.subheader(f"📅 Détail du mois : {mois_noms[sel_month-1]}")
         m1, m2, m3, m4, m5, m6 = st.columns(6)
-        m1.metric("Réalisé Mois", f"{real_m:,.2f} €")
+        m1.metric("Mois", f"{real_m:,.2f} €")
         m2.metric("Objectif", f"{obj_m_val:,.2f} €")
         m3.metric("%", f"{(real_m/obj_m_val*100 if obj_m_val>0 else 0):.1f}%")
-        m4.metric("Nuits", f"{nuits} j")
-        m5.metric("Prix Moy.", f"{(real_m/nuits if nuits > 0 else 0):,.2f} €")
-        m6.metric("% Occ.", f"{(nuits/len(days_list)*100):.1f}%")
+        m4.metric("Nuits", f"{nuits_m} j")
+        m5.metric("Prix Moy.", f"{(real_m/nuits_m if nuits_m > 0 else 0):,.2f} €")
+        m6.metric("% Occ.", f"{(nuits_m/len(days_list_m)*100):.1f}%")
 
         st.divider()
 
@@ -395,7 +430,6 @@ if check_password():
         rows = []
         for d, v in month_data.items():
             d_str = str(d)
-            # Priorité à l'historique enregistré, sinon détection auto
             is_checked = dict_menages.get(d_str, v["auto_menage"]) if has_history else v["auto_menage"]
                 
             rows.append({
@@ -408,13 +442,11 @@ if check_password():
         
         df_display = pd.DataFrame(rows)
 
-        # Style pour le vert (appliqué uniquement sur l'affichage)
         def style_rows(row):
             if row["Ménage"]:
                 return ['background-color: #2E8B57; color: white'] * len(row)
             return [''] * len(row)
 
-        # L'éditeur de données
         edited_df = st.data_editor(
             df_display.style.apply(style_rows, axis=1),
             use_container_width=True,
@@ -428,7 +460,6 @@ if check_password():
         )
 
         if st.button("💾 Enregistrer le planning"):
-            # On sauvegarde l'état actuel pour toutes les dates du mois
             save_df = pd.DataFrame({
                 "Date": edited_df["Date_Full"],
                 "Etat": edited_df["Ménage"]
