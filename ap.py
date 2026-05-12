@@ -201,14 +201,17 @@ if check_password():
         if os.path.exists(RESA_FILE):
             df_resa = pd.read_csv(RESA_FILE, dtype=str)
             
-            # Sécurité : Initialisation de la colonne si absente
+            # Initialisation de la colonne de suivi si absente
             if "Guide Envoyé" not in df_resa.columns:
                 df_resa["Guide Envoyé"] = "Non"
+            
+            # Suppression de la colonne "Envoyer Guide" qui ne sert à rien
+            if "Envoyer Guide" in df_resa.columns:
+                df_resa = df_resa.drop(columns=["Envoyer Guide"])
 
             # --- 1. ENVOI RAPIDE (ARRIVÉES DU JOUR) ---
             st.subheader("🚀 Arrivées du jour")
             from datetime import timedelta
-            # Calcul de la date du jour à Paris
             date_paris = (datetime.utcnow() + timedelta(hours=2)).strftime("%Y-%m-%d")
             df_jour = df_resa[df_resa["Date Arrivée"] == date_paris].copy()
 
@@ -217,10 +220,9 @@ if check_password():
             else:
                 client_a_envoyer = st.selectbox("Sélectionner le client du jour :", df_jour['Prénom_Nom'].unique())
                 
-                # Vérification si déjà envoyé
                 status_actuel = df_resa.loc[df_resa['Prénom_Nom'] == client_a_envoyer, "Guide Envoyé"].values[0]
                 if status_actuel == "Oui":
-                    st.warning("⚠️ Guide déjà marqué comme envoyé pour ce client.")
+                    st.warning("⚠️ Guide déjà envoyé.")
 
                 if st.button("📤 Envoyer le guide au client sélectionné"):
                     resa_sel = df_jour[df_jour['Prénom_Nom'] == client_a_envoyer].iloc[0]
@@ -240,26 +242,21 @@ if check_password():
                         try:
                             r = requests.post(webhook_url, json=payload)
                             if r.status_code == 200:
-                                # On marque comme envoyé dans le DF principal
                                 df_resa.loc[df_resa['Prénom_Nom'] == client_a_envoyer, "Guide Envoyé"] = "Oui"
                                 df_resa.to_csv(RESA_FILE, index=False)
-                                st.success(f"✅ Envoyé à {resa_sel['Prénom_Nom']} !")
+                                st.success(f"✅ Envoyé !")
                                 st.rerun()
-                            else:
-                                st.error("❌ Erreur de réponse du serveur (Make).")
                         except Exception as e:
-                            st.error(f"❌ Erreur lors de l'envoi : {e}")
-                    elif "119" in appart:
-                        st.warning("⚠️ Action stoppée : Le client est au 119. Pas d'envoi automatique pour cet appartement.")
+                            st.error(f"❌ Erreur : {e}")
 
             st.divider()
 
-            # --- 2. TOUTES LES RÉSERVATIONS (TABLEAU DE GESTION) ---
+            # --- 2. TOUTES LES RÉSERVATIONS ---
             st.subheader("📝 Toutes les réservations")
             
             search_query = st.text_input("🔍 Rechercher un client ou un numéro :", "")
             
-            # Tri par date la plus récente en haut
+            # Tri par date récente
             df_display = df_resa.sort_values(by="Date Arrivée", ascending=False)
             
             if search_query:
@@ -269,16 +266,33 @@ if check_password():
                     df_display['Numéro tel'].str.contains(q, na=False)
                 ]
 
-            edited_resa = st.data_editor(df_display, num_rows="dynamic", use_container_width=True, key="editor_full_list")
+            # AFFICHAGE DU TABLEAU : Ajout de ligne en HAUT (num_rows="dynamic")
+            # Note: Dans Streamlit, la ligne vide apparaît en bas, mais les nouvelles entrées 
+            # se trieront en haut à la sauvegarde grâce au sort_values.
+            edited_resa = st.data_editor(
+                df_display, 
+                num_rows="dynamic", 
+                use_container_width=True, 
+                key="editor_full_list"
+            )
 
             if st.button("💾 SAUVEGARDER LES MODIFICATIONS"):
+                # LOGIQUE CODE AUTRE = CODE RÉSIDENCE sans le dernier caractère
+                def clean_code(row):
+                    cr = str(row.get('Code Résidence', ''))
+                    if cr and cr != 'nan':
+                        return cr[:-1]
+                    return row.get('Code Autre', '')
+
+                edited_resa['Code Autre'] = edited_resa.apply(clean_code, axis=1)
+                
                 edited_resa.to_csv(RESA_FILE, index=False)
-                st.success("Base de données mise à jour !")
+                st.success("Sauvegardé ! 'Code Autre' mis à jour automatiquement.")
                 st.rerun()
 
             st.divider()
 
-            # --- 3. LE CALENDRIER (EN BAS DE PAGE) ---
+            # --- 3. CALENDRIER EN BAS ---
             st.subheader("🗓️ Vue Calendrier")
             calendar_events = []
             for _, row in df_resa.iterrows():
@@ -288,13 +302,7 @@ if check_password():
                     "end": row['Date Départ'],
                     "color": "#FF4B4B" if "14" in str(row['Appartement']) else "#1C83E1"
                 })
-
-            calendar_options = {
-                "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth,timeGridWeek"},
-                "initialView": "dayGridMonth",
-            }
-            calendar(events=calendar_events, options=calendar_options, key="calendar_resa_footer")
-                
+            calendar(events=calendar_events, options={"initialView": "dayGridMonth"}, key="calendar_footer")
     # --- PAGE DÉTAIL 014 ---
     elif page == "Détail 014":
         st.title("🏠 Détail Studio 014")
