@@ -154,12 +154,13 @@ if check_password():
         import os, zipfile, io
         if not os.path.exists("justificatifs"): os.makedirs("justificatifs")
 
-        # 1. NETTOYAGE DES DONNÉES (On ignore le pointage)
+        # 1. NETTOYAGE
         df_compta["Justificatif"] = df_compta["Justificatif"].astype(str).replace(["False", "nan", "None", ""], "Vide")
         
-        # 2. CALCULS DE TRÉSORERIE
+        # 2. CALCULS DE TRÉSORERIE (Soudes réels des comptes)
         def calculer_solde(df, compte):
             temp = df[df["Compte"] == compte].copy()
+            # Le solde prend TOUT en compte pour être raccord avec la banque
             pos = temp[temp["Type"].isin(["Revenu", "Apport"])]["Montant"].sum()
             neg = temp[temp["Type"].isin(["Dépense", "Crédit", "Remboursement CCA"])]["Montant"].sum()
             return pos - neg
@@ -172,7 +173,7 @@ if check_password():
         c2.metric("Espèces (Cash)", f"{s_cash:,.2f} €")
         c3.metric("TOTAL RÉEL", f"{(s_cic + s_cash):,.2f} €")
 
-        # 3. ANALYSE FINANCIÈRE
+        # 3. ANALYSE FINANCIÈRE (Logique Cash Flow demandée)
         if not df_compta.empty:
             st.divider()
             st.subheader("📊 Analyse Financière")
@@ -190,13 +191,29 @@ if check_password():
             
             final_rows = []
             for a in sorted(df_calc['Année'].unique(), reverse=True):
-                val_y = recap_y.loc[a]
-                cf_y = (val_y["Revenu"] + val_y["Apport"]) - (val_y["Dépense"] + val_y["Crédit"] + val_y["Remboursement CCA"])
-                final_rows.append({"Période": f"TOTAL {a}", "Revenus": val_y["Revenu"], "Charges": val_y["Dépense"], "Crédit": val_y["Crédit"], "Cash Flow": cf_y})
+                v = recap_y.loc[a]
+                # CASH FLOW : Uniquement Revenus - (Dépenses + Crédit)
+                # On exclut Apport et Remboursement CCA de cette ligne
+                cf_y = v["Revenu"] - (v["Dépense"] + v["Crédit"])
+                
+                final_rows.append({
+                    "Période": f"TOTAL {a}", 
+                    "Revenus": v["Revenu"], 
+                    "Charges": v["Dépense"], 
+                    "Crédit": v["Crédit"], 
+                    "Cash Flow": cf_y
+                })
+                
                 mes_mois = recap_m.xs(a, level='Année').sort_index(ascending=False)
-                for m, val_m in mes_mois.iterrows():
-                    cf_m = (val_m["Revenu"] + val_m["Apport"]) - (val_m["Dépense"] + val_m["Crédit"] + val_m["Remboursement CCA"])
-                    final_rows.append({"Période": m, "Revenus": val_m["Revenu"], "Charges": val_m["Dépense"], "Crédit": val_m["Crédit"], "Cash Flow": cf_m})
+                for m, vm in mes_mois.iterrows():
+                    cf_m = vm["Revenu"] - (vm["Dépense"] + vm["Crédit"])
+                    final_rows.append({
+                        "Période": m, 
+                        "Revenus": vm["Revenu"], 
+                        "Charges": vm["Dépense"], 
+                        "Crédit": vm["Crédit"], 
+                        "Cash Flow": cf_m
+                    })
             
             st.table(pd.DataFrame(final_rows).set_index("Période").style.format("{:,.2f} €"))
 
@@ -229,14 +246,11 @@ if check_password():
 
         st.divider()
 
-        # 5. JOURNAL & GESTION DES LIGNES
+        # 5. JOURNAL & GESTION
         st.subheader("📝 Journal des opérations")
+        # On affiche uniquement les colonnes demandées
+        df_display = df_compta[["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"]].sort_values(by="Date", ascending=False)
         
-        # On ne garde que les colonnes utiles (sans Pointé)
-        cols_to_show = ["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"]
-        df_display = df_compta[cols_to_show].sort_values(by="Date", ascending=False)
-        
-        # Sélection de ligne via on_select
         event = st.dataframe(
             df_display, 
             use_container_width=True, 
@@ -244,8 +258,6 @@ if check_password():
             selection_mode="single-row",
             column_config={"Montant": st.column_config.NumberColumn(format="%.2f €")}
         )
-
-        st.info("💡 Sélectionnez une ligne pour gérer son justificatif ou la supprimer.")
 
         if event.selection.rows:
             idx_sel = event.selection.rows[0]
@@ -257,7 +269,6 @@ if check_password():
             g1, g2, g3 = st.columns(3)
             
             with g1:
-                st.write("**Justificatif actuel**")
                 if path_j != "Vide" and os.path.exists(path_j):
                     with open(path_j, "rb") as f:
                         st.download_button("📥 Télécharger", f, file_name=os.path.basename(path_j), key=f"dl_{vrai_idx}")
@@ -267,13 +278,11 @@ if check_password():
                         df_compta.at[vrai_idx, "Justificatif"] = "Vide"
                         df_compta.to_csv(COMPTA_FILE, index=False)
                         st.rerun()
-                else:
-                    st.warning("Aucun fichier lié.")
+                else: st.warning("Aucun fichier.")
 
             with g2:
-                st.write("**Remplacer/Ajouter**")
-                new_up = st.file_uploader("Nouveau fichier", type=["pdf","png","jpg","jpeg"], key=f"up_{vrai_idx}")
-                if st.button("💾 Enregistrer nouveau fichier", key=f"sf_{vrai_idx}"):
+                new_up = st.file_uploader("Remplacer", type=["pdf","png","jpg","jpeg"], key=f"up_{vrai_idx}")
+                if st.button("💾 Sauvegarder fichier", key=f"sf_{vrai_idx}"):
                     if new_up:
                         fp = os.path.join("justificatifs", f"ID_{vrai_idx}_{new_up.name}".replace(" ","_"))
                         with open(fp, "wb") as f: f.write(new_up.getbuffer())
@@ -282,7 +291,6 @@ if check_password():
                         st.rerun()
 
             with g3:
-                st.write("**Danger**")
                 if st.button("🛑 SUPPRIMER LA LIGNE", type="primary", key=f"del_l_{vrai_idx}"):
                     if path_j != "Vide" and os.path.exists(path_j):
                         try: os.remove(path_j)
