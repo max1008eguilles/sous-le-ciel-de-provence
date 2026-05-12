@@ -152,16 +152,15 @@ if check_password():
         st.title("💰 Comptabilité Partagée")
         
         import os
-        # Création du dossier si absent
         if not os.path.exists("justificatifs"):
             os.makedirs("justificatifs")
 
-        # Nettoyage et initialisation des colonnes pour éviter les crashs
+        # NETTOYAGE CRITIQUE : On s'assure que Justificatif est tjs une chaîne de caractères
         if "Justificatif" not in df_compta.columns:
             df_compta["Justificatif"] = ""
-        df_compta["Justificatif"] = df_compta["Justificatif"].fillna("")
+        df_compta["Justificatif"] = df_compta["Justificatif"].astype(str).replace(["False", "nan", "None"], "")
 
-        # ... (Metrics CIC / Cash / Total ici) ...
+        # ... (Metrics CIC / Cash / Total inchangés) ...
 
         st.divider()
         col_add, col_list = st.columns([1, 2])
@@ -174,84 +173,70 @@ if check_password():
                 cpt = st.selectbox("Compte", ["CIC", "Cash"])
                 m = st.number_input("Montant", format="%.2f")
                 txt = st.text_input("Commentaire")
-                
                 up_file = st.file_uploader("Joindre le justificatif", type=["pdf", "png", "jpg", "jpeg"])
                 
                 if st.form_submit_button("Valider"):
                     path_sauvegarde = ""
                     if up_file:
-                        # On nettoie le nom du fichier pour éviter les caractères spéciaux
-                        nom_propre = up_file.name.replace(" ", "_").replace("'", "")
+                        nom_propre = up_file.name.replace(" ", "_")
                         fname = f"{d}_{m}_{nom_propre}"
                         path_sauvegarde = os.path.join("justificatifs", fname)
                         with open(path_sauvegarde, "wb") as f:
                             f.write(up_file.getbuffer())
                     
-                    # Ajout propre par dictionnaire
                     new_line = {
                         "Date": str(d), "Type": t, "Compte": cpt, "Montant": m,
                         "Commentaire": txt, "Pointé": "Non", "Justificatif": path_sauvegarde
                     }
-                    
                     df_updated = pd.concat([df_compta, pd.DataFrame([new_line])], ignore_index=True)
                     df_updated.to_csv(COMPTA_FILE, index=False)
-                    st.success("✅ Enregistré sur le dashboard !")
+                    st.success("✅ Enregistré !")
                     st.rerun()
                     
         with col_list:
             st.subheader("📝 Journal")
-            # Tri récent en haut
+            # Tri par date décroissante
             df_display = df_compta.sort_values(by="Date", ascending=False).copy()
             
-            # CONFIGURATION SÉCURISÉE : On définit chaque colonne pour éviter le bug visuel
-            column_config = {
-                "Justificatif": st.column_config.TextColumn("📄 Fichier", disabled=True),
-                "Montant": st.column_config.NumberColumn("Montant", format="%.2f €"),
-                "Pointé": st.column_config.SelectboxColumn("✅", options=["Oui", "Non"])
-            }
-
+            # Affichage simple sans config complexe pour éviter les crashs API
             ed_c = st.data_editor(
                 df_display, 
                 num_rows="dynamic", 
                 use_container_width=True,
-                column_config=column_config,
-                key="compta_editor_v4"
+                key="compta_editor_vFinal"
             )
 
-            if st.button("💾 Sauvegarder les modifications"):
+            if st.button("💾 Sauvegarder modifications"):
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
 
-            # --- ZONE DE TÉLÉCHARGEMENT (FONCTIONNE SUR MOBILE) ---
+            # --- ZONE DE TÉLÉCHARGEMENT SÉCURISÉE ---
             st.divider()
             st.subheader("📂 Consulter / Télécharger")
             
-            # On filtre uniquement les lignes qui ont un fichier
-            liste_justifs = df_compta[df_compta["Justificatif"] != ""]["Justificatif"].tolist()
+            # On filtre uniquement les vrais chemins de fichiers existants
+            liste_justifs = [f for f in df_compta["Justificatif"].unique() 
+                             if f and f != "" and os.path.exists(str(f))]
             
             if liste_justifs:
+                # La lambda est protégée car on a filtré les valeurs invalides au-dessus
                 fichier_sel = st.selectbox(
                     "Sélectionner un justificatif :", 
                     liste_justifs, 
-                    format_func=lambda x: os.path.basename(x),
-                    key="select_download"
+                    format_func=lambda x: os.path.basename(str(x))
                 )
                 
-                if fichier_sel and os.path.exists(fichier_sel):
+                if fichier_sel:
                     with open(fichier_sel, "rb") as f:
-                        donnees = f.read()
-                        st.download_button(
+                        btn = st.download_button(
                             label=f"📥 Télécharger {os.path.basename(fichier_sel)}",
-                            data=donnees,
+                            data=f.read(),
                             file_name=os.path.basename(fichier_sel),
                             mime="application/octet-stream",
                             use_container_width=True
                         )
-                        # Petit aperçu visuel si c'est une image
-                        if fichier_sel.lower().endswith(('.png', '.jpg', '.jpeg')):
-                            st.image(donnees, caption="Aperçu du justificatif")
             else:
-                st.info("Aucun justificatif n'a été uploadé pour le moment.")
+                st.info("Aucun justificatif trouvé.")
                 
 # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
