@@ -783,7 +783,7 @@ if check_password():
             
             # Message complet avec codes
             message_whatsapp = (
-                f"✨ *PLANNING MÉNAGES À VENIR*\n\n"
+                f"Bonjour,\nvoici un récapitulatif des ménages à venir :\n\n"
                 f"{texte_menages}\n"
                 f"🔑 *RAPPEL DES CODES :*\n"
                 f"- Résidence : {code_res_val}\n"
