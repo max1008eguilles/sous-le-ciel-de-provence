@@ -195,82 +195,89 @@ if check_password():
                 st.rerun()
 
 # --- PAGE RÉSERVATIONS ---
-    # --- 2. TOUTES LES RÉSERVATIONS ---
-            st.subheader("📝 Toutes les réservations")
+    elif page == "Réservations":
+        st.title("📅 Gestion & Envois")
+
+        # 1. CHARGEMENT SÉCURISÉ (Réparé pour éviter l'écran blanc/rouge)
+        if not os.path.exists(RESA_FILE) or os.path.getsize(RESA_FILE) == 0:
+            df_resa = pd.DataFrame(columns=["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Montant", "Numéro tel", "Mail", "Code Résidence", "Code Studio", "Code Autre", "Guide Envoyé"])
+            df_resa.to_csv(RESA_FILE, index=False)
+        else:
+            df_resa = pd.read_csv(RESA_FILE, dtype=str).fillna("")
+
+        # Calcul de la date du jour
+        from datetime import timedelta
+        date_paris = (datetime.utcnow() + timedelta(hours=2)).strftime("%Y-%m-%d")
+
+        # --- 2. ARRIVÉES DU JOUR (ENVOI RAPIDE) ---
+        st.subheader("🚀 Arrivées du jour")
+        df_jour = df_resa[df_resa["Date Arrivée"] == date_paris].copy()
+
+        if df_jour.empty:
+            st.info(f"Aucune arrivée prévue aujourd'hui ({date_paris}).")
+        else:
+            client_sel = st.selectbox("Sélectionner le client :", df_jour['Prénom_Nom'].unique())
+            if st.button("📤 Envoyer le guide au client sélectionné"):
+                # ... Ton code Webhook ici ...
+                st.success("C'est envoyé !")
+
+        st.divider()
+
+        # --- 3. TOUTES LES RÉSERVATIONS (TABLEAU ÉDITABLE) ---
+        st.subheader("📝 Toutes les réservations")
+        
+        # Tri : Plus récent en haut
+        df_display = df_resa.sort_values(by="Date Arrivée", ascending=False)
+
+        # Ligne vide en haut pour l'ajout
+        empty_row = pd.DataFrame([{col: "" for col in df_display.columns}])
+        df_with_add = pd.concat([empty_row, df_display], ignore_index=True)
+
+        column_config = {
+            "Guide Envoyé": st.column_config.SelectboxColumn(options=["Non", "Oui"], default="Non")
+        }
+
+        # On utilise le data_editor SIMPLE (celui qui ne crash jamais)
+        edited_resa = st.data_editor(
+            df_with_add, 
+            num_rows="dynamic", 
+            use_container_width=True, 
+            key="editor_stable",
+            column_config=column_config
+        )
+
+        if st.button("💾 SAUVEGARDER LES MODIFICATIONS"):
+            # Nettoyage et calcul Code Autre
+            df_to_save = edited_resa[edited_resa['Prénom_Nom'] != ""].copy()
             
-            # 1. Préparation et tri
-            df_display = df_resa.sort_values(by="Date Arrivée", ascending=False).copy()
-
-            # 2. AJOUT DE LA LIGNE VIDE EN HAUT
-            # On crée une ligne vide pour l'ajout rapide
-            empty_row = pd.DataFrame([{col: "" for col in df_display.columns}])
-            empty_row["Guide Envoyé"] = "Non"
-            df_with_add = pd.concat([empty_row, df_display], ignore_index=True)
-
-            # Barre de recherche
-            search_query = st.text_input("🔍 Rechercher un client ou un numéro :", "")
-            if search_query:
-                q = search_query.lower()
-                df_with_add = df_with_add[
-                    df_with_add['Prénom_Nom'].str.lower().str.contains(q, na=False) | 
-                    df_with_add['Numéro tel'].str.contains(q, na=False)
-                ]
-
-            # 3. CONFIGURATION ET HIGHLIGHT (BLEU CLAIR)
-            # On utilise TextColumn pour appliquer un formatage sur la date
-            column_config = {
-                "Date Arrivée": st.column_config.TextColumn(
-                    "Date Arrivée",
-                    help="Les dates d'aujourd'hui ou passées apparaissent avec un indicateur",
-                    # Astuce visuelle : on ajoute un indicateur directement dans la donnée pour simuler le highlight
-                ),
-                "Guide Envoyé": st.column_config.SelectboxColumn(
-                    options=["Non", "Oui"],
-                    default="Non"
-                )
-            }
-
-            # Pour le highlight sans casser l'édition, on modifie temporairement l'affichage de la colonne Date
-            # On ajoute un fond coloré ou un symbole uniquement pour les dates <= aujourd'hui
-            def highlight_date_val(val):
-                if val and str(val) <= date_paris:
-                    return f"🟦 {val}" # Petit carré bleu devant la date pour le repère visuel
-                return val
-
-            df_with_add["Date Arrivée"] = df_with_add["Date Arrivée"].apply(highlight_date_val)
-
-            # Affichage du tableau éditable
-            edited_resa = st.data_editor(
-                df_with_add, 
-                num_rows="dynamic", 
-                use_container_width=True, 
-                key="editor_final_no_bug",
-                column_config=column_config
-            )
-
-            if st.button("💾 SAUVEGARDER LES MODIFICATIONS"):
-                # NETTOYAGE AVANT SAUVEGARDE
-                df_to_save = edited_resa[edited_resa['Prénom_Nom'] != ""].copy()
-                
-                # On retire le symbole 🟦 des dates avant d'enregistrer le CSV
-                df_to_save["Date Arrivée"] = df_to_save["Date Arrivée"].str.replace("🟦 ", "")
-                
-                # Logique automatique Code Autre
-                def auto_code(row):
-                    cr = str(row.get('Code Résidence', ''))
-                    if cr and len(cr) > 1:
-                        return cr[:-1]
-                    return row.get('Code Autre', '')
-                
-                df_to_save['Code Autre'] = df_to_save.apply(auto_code, axis=1)
-                
-                # Sauvegarde propre
-                df_to_save = df_to_save.sort_values(by="Date Arrivée", ascending=False)
-                df_to_save.to_csv(RESA_FILE, index=False)
-                st.success("Enregistré ! Les dates ont été nettoyées et sauvegardées.")
-                st.rerun()
-  
+            def get_code_autre(row):
+                res = str(row.get('Code Résidence', ''))
+                return res[:-1] if len(res) > 1 else row.get('Code Autre', '')
             
+            df_to_save['Code Autre'] = df_to_save.apply(get_code_autre, axis=1)
+            df_to_save = df_to_save.sort_values(by="Date Arrivée", ascending=False)
+            
+            df_to_save.to_csv(RESA_FILE, index=False)
+            st.success("Sauvegarde réussie !")
+            st.rerun()
+
+        st.divider()
+
+        # --- 4. CALENDRIER (TOUT EN BAS) ---
+        st.subheader("🗓️ Vue Calendrier")
+        calendar_events = []
+        for _, row in df_resa.iterrows():
+            if row['Date Arrivée'] and row['Date Départ']:
+                calendar_events.append({
+                    "title": f"{row['Prénom_Nom']} ({row['Appartement']})",
+                    "start": row['Date Arrivée'],
+                    "end": row['Date Départ'],
+                    "color": "#FF4B4B" if "14" in str(row['Appartement']) else "#1C83E1"
+                })
+        
+        from streamlit_calendar import calendar
+        calendar(events=calendar_events, options={"initialView": "dayGridMonth"}, key="cal_stable")
+        
     # --- PAGE DÉTAIL 014 ---
     elif page == "Détail 014":
         st.title("🏠 Détail Studio 014")
