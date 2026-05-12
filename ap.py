@@ -149,94 +149,82 @@ if check_password():
 
   # --- PAGE COMPTA ---
     elif page == "COMPTA":
-        st.title("💰 Comptabilité Partagée")
+        st.title("💰 Comptabilité Interactive")
         
-        import os
-        if not os.path.exists("justificatifs"):
-            os.makedirs("justificatifs")
+        # Nettoyage des données pour éviter les crashs précédents
+        df_compta["Justificatif"] = df_compta["Justificatif"].astype(str).replace(["False", "nan", "None", ""], "Vide")
 
-        # NETTOYAGE CRITIQUE : On s'assure que Justificatif est tjs une chaîne de caractères
-        if "Justificatif" not in df_compta.columns:
-            df_compta["Justificatif"] = ""
-        df_compta["Justificatif"] = df_compta["Justificatif"].astype(str).replace(["False", "nan", "None"], "")
+        # ... (Metrics habituelles) ...
 
-        # ... (Metrics CIC / Cash / Total inchangés) ...
+        st.subheader("📝 Journal des opérations")
+        st.info("💡 Cliquez sur une case du tableau pour sélectionner une ligne, puis utilisez le module ci-dessous pour ajouter ou voir le justificatif.")
+
+        # 1. AFFICHAGE DU TABLEAU (Trié par date)
+        df_display = df_compta.sort_values(by="Date", ascending=False)
+        
+        # On utilise le data_editor avec sélection de ligne
+        event = st.dataframe(
+            df_display,
+            use_container_width=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="compta_table"
+        )
+
+        # 2. MODULE DE GESTION DYNAMIQUE (Ligne sélectionnée)
+        if event and event.selection.rows:
+            # Récupération de l'index réel dans le dataframe original
+            idx_selection = event.selection.rows[0]
+            ligne_selectionnee = df_display.iloc[idx_selection]
+            vrai_index_csv = df_display.index[idx_selection]
+            
+            st.markdown(f"### 📍 Gestion de la ligne : **{ligne_selectionnee['Commentaire']}** ({ligne_selectionnee['Montant']}€)")
+            
+            col_view, col_upload = st.columns(2)
+
+            with col_view:
+                st.write("**Visualisation :**")
+                path_actuel = ligne_selectionnee["Justificatif"]
+                
+                if path_actuel != "Vide" and os.path.exists(path_actuel):
+                    with open(path_actuel, "rb") as f:
+                        st.download_button(
+                            label="👁️ Ouvrir le justificatif actuel",
+                            data=f.read(),
+                            file_name=os.path.basename(path_actuel),
+                            mime="application/octet-stream"
+                        )
+                    if path_actuel.lower().endswith(('.png', '.jpg', '.jpeg')):
+                        st.image(path_actuel, width=300)
+                else:
+                    st.warning("⚠️ Aucun justificatif pour cette dépense.")
+
+            with col_upload:
+                st.write("**Ajouter / Remplacer :**")
+                new_file = st.file_uploader("Nouveau fichier", type=["pdf", "png", "jpg", "jpeg"], key="up_detail")
+                
+                if st.button("💾 Enregistrer sur cette ligne"):
+                    if new_file:
+                        if not os.path.exists("justificatifs"): os.makedirs("justificatifs")
+                        fname = f"REF_{vrai_index_csv}_{new_file.name}".replace(" ", "_")
+                        path_save = os.path.join("justificatifs", fname)
+                        
+                        with open(path_save, "wb") as f:
+                            f.write(new_file.getbuffer())
+                        
+                        # MISE À JOUR DE LA LIGNE EXISTANTE
+                        df_compta.at[vrai_index_csv, "Justificatif"] = path_save
+                        df_compta.to_csv(COMPTA_FILE, index=False)
+                        
+                        st.success("✅ Justificatif lié à la dépense !")
+                        st.rerun()
+                    else:
+                        st.error("Sélectionnez un fichier d'abord.")
 
         st.divider()
-        col_add, col_list = st.columns([1, 2])
-        
-        with col_add:
-            st.subheader("➕ Ajouter")
-            with st.form("f_compta_final", clear_on_submit=True):
-                d = st.date_input("Date", date.today())
-                t = st.selectbox("Type", ["Revenu", "Dépense", "Crédit", "Apport", "Remboursement CCA"])
-                cpt = st.selectbox("Compte", ["CIC", "Cash"])
-                m = st.number_input("Montant", format="%.2f")
-                txt = st.text_input("Commentaire")
-                up_file = st.file_uploader("Joindre le justificatif", type=["pdf", "png", "jpg", "jpeg"])
-                
-                if st.form_submit_button("Valider"):
-                    path_sauvegarde = ""
-                    if up_file:
-                        nom_propre = up_file.name.replace(" ", "_")
-                        fname = f"{d}_{m}_{nom_propre}"
-                        path_sauvegarde = os.path.join("justificatifs", fname)
-                        with open(path_sauvegarde, "wb") as f:
-                            f.write(up_file.getbuffer())
-                    
-                    new_line = {
-                        "Date": str(d), "Type": t, "Compte": cpt, "Montant": m,
-                        "Commentaire": txt, "Pointé": "Non", "Justificatif": path_sauvegarde
-                    }
-                    df_updated = pd.concat([df_compta, pd.DataFrame([new_line])], ignore_index=True)
-                    df_updated.to_csv(COMPTA_FILE, index=False)
-                    st.success("✅ Enregistré !")
-                    st.rerun()
-                    
-        with col_list:
-            st.subheader("📝 Journal")
-            # Tri par date décroissante
-            df_display = df_compta.sort_values(by="Date", ascending=False).copy()
-            
-            # Affichage simple sans config complexe pour éviter les crashs API
-            ed_c = st.data_editor(
-                df_display, 
-                num_rows="dynamic", 
-                use_container_width=True,
-                key="compta_editor_vFinal"
-            )
-
-            if st.button("💾 Sauvegarder modifications"):
-                ed_c.to_csv(COMPTA_FILE, index=False)
-                st.rerun()
-
-            # --- ZONE DE TÉLÉCHARGEMENT SÉCURISÉE ---
-            st.divider()
-            st.subheader("📂 Consulter / Télécharger")
-            
-            # On filtre uniquement les vrais chemins de fichiers existants
-            liste_justifs = [f for f in df_compta["Justificatif"].unique() 
-                             if f and f != "" and os.path.exists(str(f))]
-            
-            if liste_justifs:
-                # La lambda est protégée car on a filtré les valeurs invalides au-dessus
-                fichier_sel = st.selectbox(
-                    "Sélectionner un justificatif :", 
-                    liste_justifs, 
-                    format_func=lambda x: os.path.basename(str(x))
-                )
-                
-                if fichier_sel:
-                    with open(fichier_sel, "rb") as f:
-                        btn = st.download_button(
-                            label=f"📥 Télécharger {os.path.basename(fichier_sel)}",
-                            data=f.read(),
-                            file_name=os.path.basename(fichier_sel),
-                            mime="application/octet-stream",
-                            use_container_width=True
-                        )
-            else:
-                st.info("Aucun justificatif trouvé.")
+        # On garde ton formulaire "Ajouter" en bas pour les nouvelles saisies
+        with st.expander("➕ Saisir une nouvelle opération (sans justificatif immédiat)"):
+            # ... (Ton code de formulaire habituel ici) ...
                 
 # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
