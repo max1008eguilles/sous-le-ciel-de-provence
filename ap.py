@@ -195,25 +195,7 @@ if check_password():
                 st.rerun()
 
 # --- PAGE RÉSERVATIONS ---
-    elif page == "Réservations":
-        st.title("📅 Gestion & Envois")
-
-        if os.path.exists(RESA_FILE):
-            # Chargement propre
-            df_resa = pd.read_csv(RESA_FILE, dtype=str).fillna("")
-            
-            # Nettoyage des colonnes inutiles
-            if "Envoyer Guide" in df_resa.columns:
-                df_resa = df_resa.drop(columns=["Envoyer Guide"])
-
-            # --- 1. ARRIVÉES DU JOUR (ENVOI RAPIDE) ---
-            from datetime import timedelta
-            date_paris = (datetime.utcnow() + timedelta(hours=2)).strftime("%Y-%m-%d")
-            # ... (garde ton code d'envoi webhook ici, il fonctionne bien) ...
-
-            st.divider()
-
-          # --- 2. TOUTES LES RÉSERVATIONS ---
+    # --- 2. TOUTES LES RÉSERVATIONS ---
             st.subheader("📝 Toutes les réservations")
             
             # 1. Préparation et tri
@@ -287,29 +269,7 @@ if check_password():
                 df_to_save.to_csv(RESA_FILE, index=False)
                 st.success("Enregistré ! Les dates ont été nettoyées et sauvegardées.")
                 st.rerun()
-
-            # --- 3. CALENDRIER (EN BAS) ---
-            st.subheader("🗓️ Vue Calendrier")
-            calendar_events = []
-            for _, row in df_resa.iterrows():
-                if row['Date Arrivée'] and row['Date Départ']:
-                    calendar_events.append({
-                        "title": f"{row['Prénom_Nom']} ({row['Appartement']})",
-                        "start": row['Date Arrivée'],
-                        "end": row['Date Départ'],
-                        "color": "#FF4B4B" if "14" in str(row['Appartement']) else "#1C83E1"
-                    })
-            
-            # Ajout d'un événement discret pour "Aujourd'hui" en bleu clair dans le calendrier
-            calendar_events.append({
-                "title": "AUJOURD'HUI",
-                "start": date_paris,
-                "allDay": True,
-                "display": "background",
-                "color": "#D1E8FF" # Bleu clair
-            })
-
-            calendar(events=calendar_events, options={"initialView": "dayGridMonth"}, key="cal_footer")
+  
             
     # --- PAGE DÉTAIL 014 ---
     elif page == "Détail 014":
