@@ -785,11 +785,11 @@ if check_password():
             message_whatsapp = (
                 f"Bonjour,\nvoici un récapitulatif des ménages à venir :\n\n"
                 f"{texte_menages}\n"
-                f"🔑 *RAPPEL DES CODES :*\n"
+                f"*RAPPEL DES CODES :*\n"
                 f"- Résidence : {code_res_val}\n"
                 f"- Studio 014 : 178459\n"
                 f"- Studio 119 : {code_119_val} (dès le {date_119})\n\n"
-                f"Merci ! 🙏"
+                f"Merci !"
             )
             
             import urllib.parse
