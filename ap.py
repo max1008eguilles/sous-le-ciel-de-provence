@@ -193,19 +193,16 @@ if check_password():
             if st.button("💾 Sauvegarder Compta"):
                 ed_c.to_csv(COMPTA_FILE, index=False)
                 st.rerun()
-
 # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
         st.title("📅 Gestion & Envois")
 
-        # 1. CHARGEMENT SÉCURISÉ (Réparé pour éviter l'écran blanc/rouge)
+        # 1. CHARGEMENT SÉCURISÉ
         if not os.path.exists(RESA_FILE) or os.path.getsize(RESA_FILE) == 0:
             df_resa = pd.DataFrame(columns=["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Montant", "Numéro tel", "Mail", "Code Résidence", "Code Studio", "Code Autre", "Guide Envoyé"])
-            df_resa.to_csv(RESA_FILE, index=False)
         else:
             df_resa = pd.read_csv(RESA_FILE, dtype=str).fillna("")
 
-        # Calcul de la date du jour
         from datetime import timedelta
         date_paris = (datetime.utcnow() + timedelta(hours=2)).strftime("%Y-%m-%d")
 
@@ -218,8 +215,8 @@ if check_password():
         else:
             client_sel = st.selectbox("Sélectionner le client :", df_jour['Prénom_Nom'].unique())
             if st.button("📤 Envoyer le guide au client sélectionné"):
-                # ... Ton code Webhook ici ...
-                st.success("C'est envoyé !")
+                # (Ton code Webhook ici)
+                st.success("Guide envoyé !")
 
         st.divider()
 
@@ -227,38 +224,49 @@ if check_password():
         st.subheader("📝 Toutes les réservations")
         
         # Tri : Plus récent en haut
-        df_display = df_resa.sort_values(by="Date Arrivée", ascending=False)
+        df_display = df_resa.sort_values(by="Date Arrivée", ascending=False).copy()
 
-        # Ligne vide en haut pour l'ajout
+        # ASTUCE PASTILLE BLEUE : On l'ajoute si la date est aujourd'hui ou passée
+        def add_blue_dot(val):
+            if val and str(val) <= date_paris and str(val) != "":
+                return f"🔵 {val}"
+            return val
+
+        df_display["Date Arrivée"] = df_display["Date Arrivée"].apply(add_blue_dot)
+
+        # Ligne vide en haut pour l'ajout (SANS pastille pour la nouvelle saisie)
         empty_row = pd.DataFrame([{col: "" for col in df_display.columns}])
+        empty_row["Guide Envoyé"] = "Non"
         df_with_add = pd.concat([empty_row, df_display], ignore_index=True)
 
         column_config = {
             "Guide Envoyé": st.column_config.SelectboxColumn(options=["Non", "Oui"], default="Non")
         }
 
-        # On utilise le data_editor SIMPLE (celui qui ne crash jamais)
         edited_resa = st.data_editor(
             df_with_add, 
             num_rows="dynamic", 
             use_container_width=True, 
-            key="editor_stable",
+            key="editor_final_stable",
             column_config=column_config
         )
 
         if st.button("💾 SAUVEGARDER LES MODIFICATIONS"):
-            # Nettoyage et calcul Code Autre
+            # NETTOYAGE : On enlève les pastilles 🔵 et les lignes vides
             df_to_save = edited_resa[edited_resa['Prénom_Nom'] != ""].copy()
+            df_to_save["Date Arrivée"] = df_to_save["Date Arrivée"].str.replace("🔵 ", "", regex=False)
             
+            # CODE AUTRE automatique
             def get_code_autre(row):
                 res = str(row.get('Code Résidence', ''))
                 return res[:-1] if len(res) > 1 else row.get('Code Autre', '')
             
             df_to_save['Code Autre'] = df_to_save.apply(get_code_autre, axis=1)
-            df_to_save = df_to_save.sort_values(by="Date Arrivée", ascending=False)
             
+            # Tri final et sauvegarde
+            df_to_save = df_to_save.sort_values(by="Date Arrivée", ascending=False)
             df_to_save.to_csv(RESA_FILE, index=False)
-            st.success("Sauvegarde réussie !")
+            st.success("Sauvegarde réussie avec pastilles nettoyées !")
             st.rerun()
 
         st.divider()
@@ -276,7 +284,7 @@ if check_password():
                 })
         
         from streamlit_calendar import calendar
-        calendar(events=calendar_events, options={"initialView": "dayGridMonth"}, key="cal_stable")
+        calendar(events=calendar_events, options={"initialView": "dayGridMonth"}, key="cal_final")
         
     # --- PAGE DÉTAIL 014 ---
     elif page == "Détail 014":
