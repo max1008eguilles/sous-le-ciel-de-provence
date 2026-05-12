@@ -691,6 +691,35 @@ if check_password():
                 json.dump({"montant_courses": nouveau_montant_courses}, f)
 
         st.divider()
+    
+    # 2. COLLECTE FORCEE : On scanne les bons fichiers
+    all_data = []
+    # CORRECTION ICI : Utilisation des noms de fichiers réels
+    sources = {"Studio 014": "menages_manuels_014.csv", "Studio 119": "menages_manuels_119.csv"}
+    
+    for appt_name, file_path in sources.items():
+        if os.path.exists(file_path):
+            df_src = pd.read_csv(file_path)
+            # CORRECTION ICI : Ta colonne s'appelle "Etat" et non "Ménage ?" dans tes fichiers manuels
+            col_etat = "Etat" if "Etat" in df_src.columns else "Ménage ?"
+            
+            if col_etat in df_src.columns and "Date" in df_src.columns:
+                # On prend tout ce qui est coché True
+                df_checked = df_src[df_src[col_etat] == True].copy()
+                
+                for _, row in df_checked.iterrows():
+                    d_str = str(row["Date"])
+                    clef = f"{appt_name}_{d_str}"
+                    try:
+                        d_obj = pd.to_datetime(d_str).date()
+                        all_data.append({
+                            "Clef": clef,
+                            "Date": d_obj,
+                            "Appartement": appt_name,
+                            "Statut": "Passé" if d_obj < date.today() else "À venir",
+                            "Payé": dict_paye.get(clef, False)
+                        })
+                    except: continue
 
         # 3. COLLECTE GLOBALE (SANS FILTRE DE MOIS)
         # On définit les fichiers à scanner
@@ -755,19 +784,6 @@ if check_password():
         else:
             df_view = pd.DataFrame(columns=["Date_Affichée", "Appartement", "Statut", "Payé", "Clef"])
 
-        # Forçage à 20 lignes vides pour l'esthétique si nécessaire
-        nb_a_ajouter = 20 - len(df_view)
-        if nb_a_ajouter > 0:
-            vides = pd.DataFrame({
-                "Date_Affichée": ["-"] * nb_a_ajouter,
-                "Appartement": ["-"] * nb_a_ajouter,
-                "Statut": ["-"] * nb_a_ajouter,
-                "Payé": [False] * nb_a_ajouter,
-                "Clef": [None] * nb_a_ajouter
-            })
-            df_final_display = pd.concat([df_view[["Date_Affichée", "Appartement", "Statut", "Payé", "Clef"]], vides], ignore_index=True)
-        else:
-            df_final_display = df_view[["Date_Affichée", "Appartement", "Statut", "Payé", "Clef"]]
 
         # Style de couleur pour les lignes
         def color_status(row):
