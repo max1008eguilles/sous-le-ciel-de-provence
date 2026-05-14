@@ -43,20 +43,20 @@ def check_password():
 
 if check_password():
 
-     # --- JUSTE APRÈS LA LIGNE if check_password(): ---
+     # --- À METTRE JUSTE APRÈS : if check_password(): ---
 
-# 1. On définit les chemins des fichiers
 RESA_FILE = "reservations.csv"
 
-# 2. ON CHARGE LES DONNÉES TOUT DE SUITE (C'est ça qui répare le bug)
+# On force le chargement du fichier pour toutes les pages
 if os.path.exists(RESA_FILE):
     df_resa = pd.read_csv(RESA_FILE)
     df_resa['Date Arrivée'] = pd.to_datetime(df_resa['Date Arrivée'], errors='coerce')
 else:
-    # Si le fichier n'existe pas, on crée un tableau vide pour éviter que le code plante
-    df_resa = pd.DataFrame(columns=['Date Arrivée', 'Appartement', 'Montant', 'Nuits'])
+    # Création d'un tableau vide pour éviter le crash si le fichier est absent
+    df_resa = pd.DataFrame(columns=['Date Arrivée', 'Appartement', 'Montant'])
 
-# --- ENSUITE TU GARDES TON MENU HABITUEL ---
+# --- ENSUITE TON CODE CONTINUE NORMALEMENT (Sidebar, etc.) ---`
+
 with st.sidebar:
     st.title("📂 RNM IMMO")
     page = st.radio("Navigation", ["Tableau de Bord", "RO 2026", "Détail 014", "Détail 119", "Ménages", "Compta"])
