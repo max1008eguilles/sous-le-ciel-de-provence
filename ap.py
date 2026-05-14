@@ -8,7 +8,6 @@ from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
 from streamlit_calendar import calendar
 
-
 # --- CONFIG DE LA PAGE ---
 st.set_page_config(page_title="RNM IMMO - Expert", layout="wide")
 
