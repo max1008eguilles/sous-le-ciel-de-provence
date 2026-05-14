@@ -4,8 +4,6 @@ import numpy as np
 import os
 import plotly.express as px
 import requests
-import zipfile
-import io
 from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
 from streamlit_calendar import calendar
@@ -13,18 +11,14 @@ from streamlit_calendar import calendar
 # --- CONFIG DE LA PAGE ---
 st.set_page_config(page_title="RNM IMMO - Expert", layout="wide")
 
-# --- FONCTIONS DE CHARGEMENT ---
 MENAGE_014_FILE = "menages_manuels_014.csv"
-MENAGE_119_FILE = "menages_manuels_119.csv"
-CONFIG_FILE = "config_biens_v3.csv"
-COMPTA_FILE = "compta_v3.csv"
-RESA_FILE = "reservations.csv"
-OBJ_FILE = "objectifs_014_v2.csv"
 
 def load_menages_014():
     if os.path.exists(MENAGE_014_FILE):
         return pd.read_csv(MENAGE_014_FILE)
-    return pd.DataFrame(columns=["Date", "Etat"])
+    return pd.DataFrame(columns=["Date"])
+
+df_menages_014 = load_menages_014()
 
 # --- SÉCURITÉ ---
 def check_password():
@@ -47,61 +41,7 @@ def check_password():
         return False
     return st.session_state["password_correct"]
 
-# --- DÉBUT DE L'APPLICATION SÉCURISÉE ---
 if check_password():
-    
-    # --- CHARGEMENT DES DATA ---
-    def load_config():
-        if os.path.exists(CONFIG_FILE):
-            df = pd.read_csv(CONFIG_FILE)
-            if "Date Début" in df.columns:
-                df["Date Début"] = pd.to_datetime(df["Date Début"]).dt.date
-            return df
-        return pd.DataFrame(columns=["Bien", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"])
-
-    def load_compta():
-        if os.path.exists(COMPTA_FILE):
-            df = pd.read_csv(COMPTA_FILE)
-            df["Date"] = pd.to_datetime(df["Date"]).dt.date
-            return df
-        return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])
-
-    def load_resa():
-        if os.path.exists(RESA_FILE):
-            df = pd.read_csv(RESA_FILE, dtype=str)
-            df["Date Arrivée"] = pd.to_datetime(df["Date Arrivée"], errors='coerce').dt.date
-            df["Date Départ"] = pd.to_datetime(df["Date Départ"], errors='coerce').dt.date
-            if "Montant" in df.columns:
-                df["Montant"] = pd.to_numeric(df["Montant"], errors='coerce').fillna(0.0)
-            return df
-        return pd.DataFrame(columns=["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Montant", "Numéro tel", "Mail", "Code Résidence", "Code Studio", "Code Autre"])
-
-    def load_objectifs():
-        if os.path.exists(OBJ_FILE):
-            return pd.read_csv(OBJ_FILE)
-        return pd.DataFrame(columns=["Année", "Mois", "Objectif"])
-
-    df_compta = load_compta()
-    df_cfg = load_config()
-    df_resa = load_resa()
-    df_obj_all = load_objectifs()
-
-    # --- CALCUL SOLDE ---
-    def get_solde(compte_nom):
-        if df_compta.empty: return 0.0
-        df_c = df_compta[df_compta["Compte"] == compte_nom]
-        rev = pd.to_numeric(df_c[df_c["Type"].isin(["Revenu", "Apport"])]["Montant"]).sum()
-        dep = pd.to_numeric(df_c[df_c["Type"].isin(["Dépense", "Crédit", "Remboursement CCA"])]["Montant"]).sum()
-        return float(rev - dep)
-
-    solde_cic = get_solde("CIC")
-    solde_cash_physique = get_solde("Cash")
-    total_treso_dynamique = solde_cic + solde_cash_physique
-            
-
-with st.sidebar:
-    st.title("📂 RNM IMMO")
-    page = st.radio("Navigation", ["Tableau de Bord", "RO 2026", "Détail 014", "Détail 119", "Ménages", "Compta"])
     
     CONFIG_FILE = "config_biens_v3.csv"
     COMPTA_FILE = "compta_v3.csv"
@@ -155,8 +95,6 @@ with st.sidebar:
     solde_cash_physique = get_solde("Cash")
     total_treso_dynamique = solde_cic + solde_cash_physique
 
-
-    
     # --- SIDEBAR ---
     with st.sidebar:
         st.write(f"👤 **Connecté en tant que : {st.session_state.get('user_authenticated', 'Maxence')}**")
@@ -978,3 +916,4 @@ with st.sidebar:
             st.write("**Performance Studio 119**")
             st.caption(f"CA Annuel : {sum(m['119']['CA'] for m in stats.values()):,.0f} €")
             st.caption(f"Occupation : {sum(m['119']['Occ'] for m in stats.values())/12:.1f} %")
+
