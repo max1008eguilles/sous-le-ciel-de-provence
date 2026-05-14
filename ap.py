@@ -42,19 +42,7 @@ def check_password():
     return st.session_state["password_correct"]
 
 if check_password():
-            # --- À METTRE JUSTE APRÈS : if check_password(): ---
-
-    RESA_FILE = "reservations.csv"
-
-# On force le chargement du fichier pour toutes les pages
-if os.path.exists(RESA_FILE):
-    df_resa = pd.read_csv(RESA_FILE)
-    df_resa['Date Arrivée'] = pd.to_datetime(df_resa['Date Arrivée'], errors='coerce')
-else:
-    # Création d'un tableau vide pour éviter le crash si le fichier est absent
-    df_resa = pd.DataFrame(columns=['Date Arrivée', 'Appartement', 'Montant'])
-
-# --- ENSUITE TON CODE CONTINUE NORMALEMENT (Sidebar, etc.) ---`
+            
 
 with st.sidebar:
     st.title("📂 RNM IMMO")
