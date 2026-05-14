@@ -3,48 +3,100 @@ import pandas as pd
 import numpy as np
 import os
 import plotly.express as px
+import requests
+import zipfile
+import io
 from datetime import datetime, date, timedelta
+from dateutil.relativedelta import relativedelta
+from streamlit_calendar import calendar
 
-# --- 1. CONFIGURATION DE LA PAGE ---
+# --- CONFIG DE LA PAGE ---
 st.set_page_config(page_title="RNM IMMO - Expert", layout="wide")
 
-# --- 2. CONSTANTES DES FICHIERS ---
-RESA_FILE = "reservations.csv"
-COMPTA_FILE = "compta_v3.csv"
-CONFIG_FILE = "config_biens_v3.csv"
-OBJ_FILE = "objectifs_014_v2.csv"
+# --- FONCTIONS DE CHARGEMENT ---
 MENAGE_014_FILE = "menages_manuels_014.csv"
 MENAGE_119_FILE = "menages_manuels_119.csv"
+CONFIG_FILE = "config_biens_v3.csv"
+COMPTA_FILE = "compta_v3.csv"
+RESA_FILE = "reservations.csv"
+OBJ_FILE = "objectifs_014_v2.csv"
 
-# --- 3. FONCTIONS DE CHARGEMENT ---
-def load_resa():
-    if os.path.exists(RESA_FILE):
-        df = pd.read_csv(RESA_FILE, dtype=str)
-        df["Date Arrivée"] = pd.to_datetime(df["Date Arrivée"], errors='coerce').dt.date
-        df["Montant"] = pd.to_numeric(df["Montant"], errors='coerce').fillna(0.0)
-        return df
-    return pd.DataFrame()
+def load_menages_014():
+    if os.path.exists(MENAGE_014_FILE):
+        return pd.read_csv(MENAGE_014_FILE)
+    return pd.DataFrame(columns=["Date", "Etat"])
 
-# --- 4. SÉCURITÉ ---
+# --- SÉCURITÉ ---
 def check_password():
-    if "password_correct" not in st.session_state:
-        st.title("🔐 Accès RNM IMMO")
-        user = st.text_input("Identifiant")
-        pwd = st.text_input("Mot de passe", type="password")
-        if st.button("Se connecter"):
-            if user in st.secrets["passwords"] and pwd == st.secrets["passwords"][user]:
-                st.session_state["password_correct"] = True
-                st.session_state["user_authenticated"] = user
-                st.rerun()
-            else:
-                st.error("Identifiant ou mot de passe incorrect")
-        return False
-    return True
+    def password_entered():
+        user = st.session_state["username"]
+        pwd = st.session_state["password"]
+        if user in st.secrets["passwords"] and pwd == st.secrets["passwords"][user]:
+            st.session_state["password_correct"] = True
+            st.session_state["user_authenticated"] = user
+            del st.session_state["password"]
+            del st.session_state["username"]
+        else:
+            st.session_state["password_correct"] = False
 
-# --- 5. EXECUTION PRINCIPALE ---
+    if "password_correct" not in st.session_state:
+        st.title("🏛️ Accès RNM IMMO")
+        st.text_input("Identifiant", key="username")
+        st.text_input("Mot de passe", type="password", key="password")
+        st.button("Se connecter", on_click=password_entered)
+        return False
+    return st.session_state["password_correct"]
+
+# --- DÉBUT DE L'APPLICATION SÉCURISÉE ---
 if check_password():
-    # CHARGEMENT DES DONNÉES (Dès le départ pour éviter le bug NameError)
+    
+    # --- CHARGEMENT DES DATA ---
+    def load_config():
+        if os.path.exists(CONFIG_FILE):
+            df = pd.read_csv(CONFIG_FILE)
+            if "Date Début" in df.columns:
+                df["Date Début"] = pd.to_datetime(df["Date Début"]).dt.date
+            return df
+        return pd.DataFrame(columns=["Bien", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"])
+
+    def load_compta():
+        if os.path.exists(COMPTA_FILE):
+            df = pd.read_csv(COMPTA_FILE)
+            df["Date"] = pd.to_datetime(df["Date"]).dt.date
+            return df
+        return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])
+
+    def load_resa():
+        if os.path.exists(RESA_FILE):
+            df = pd.read_csv(RESA_FILE, dtype=str)
+            df["Date Arrivée"] = pd.to_datetime(df["Date Arrivée"], errors='coerce').dt.date
+            df["Date Départ"] = pd.to_datetime(df["Date Départ"], errors='coerce').dt.date
+            if "Montant" in df.columns:
+                df["Montant"] = pd.to_numeric(df["Montant"], errors='coerce').fillna(0.0)
+            return df
+        return pd.DataFrame(columns=["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Montant", "Numéro tel", "Mail", "Code Résidence", "Code Studio", "Code Autre"])
+
+    def load_objectifs():
+        if os.path.exists(OBJ_FILE):
+            return pd.read_csv(OBJ_FILE)
+        return pd.DataFrame(columns=["Année", "Mois", "Objectif"])
+
+    df_compta = load_compta()
+    df_cfg = load_config()
     df_resa = load_resa()
+    df_obj_all = load_objectifs()
+
+    # --- CALCUL SOLDE ---
+    def get_solde(compte_nom):
+        if df_compta.empty: return 0.0
+        df_c = df_compta[df_compta["Compte"] == compte_nom]
+        rev = pd.to_numeric(df_c[df_c["Type"].isin(["Revenu", "Apport"])]["Montant"]).sum()
+        dep = pd.to_numeric(df_c[df_c["Type"].isin(["Dépense", "Crédit", "Remboursement CCA"])]["Montant"]).sum()
+        return float(rev - dep)
+
+    solde_cic = get_solde("CIC")
+    solde_cash_physique = get_solde("Cash")
+    total_treso_dynamique = solde_cic + solde_cash_physique
             
 
 with st.sidebar:
