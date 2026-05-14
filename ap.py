@@ -81,6 +81,10 @@ if check_password():
     df_compta = load_compta()
     df_cfg = load_config()
     df_resa = load_resa()
+        if 'df_resa' in locals() or 'df_resa' in globals():
+        if "Nuits" not in df_resa.columns:
+        # On crée la colonne par défaut (1 nuit par ligne) pour éviter le plantage
+        df_resa["Nuits"] = 1
     df_obj_all = load_objectifs()
 
     def get_solde(compte_nom):
