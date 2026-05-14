@@ -916,3 +916,4 @@ if check_password():
             st.write("**Performance Studio 119**")
             st.caption(f"CA Annuel : {sum(m['119']['CA'] for m in stats.values()):,.0f} €")
             st.caption(f"Occupation : {sum(m['119']['Occ'] for m in stats.values())/12:.1f} %")
+
