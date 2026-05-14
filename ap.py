@@ -3,45 +3,48 @@ import pandas as pd
 import numpy as np
 import os
 import plotly.express as px
-import requests
 from datetime import datetime, date, timedelta
-from dateutil.relativedelta import relativedelta
-from streamlit_calendar import calendar
 
-# --- CONFIG DE LA PAGE ---
+# --- 1. CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="RNM IMMO - Expert", layout="wide")
 
+# --- 2. CONSTANTES DES FICHIERS ---
+RESA_FILE = "reservations.csv"
+COMPTA_FILE = "compta_v3.csv"
+CONFIG_FILE = "config_biens_v3.csv"
+OBJ_FILE = "objectifs_014_v2.csv"
 MENAGE_014_FILE = "menages_manuels_014.csv"
+MENAGE_119_FILE = "menages_manuels_119.csv"
 
-def load_menages_014():
-    if os.path.exists(MENAGE_014_FILE):
-        return pd.read_csv(MENAGE_014_FILE)
-    return pd.DataFrame(columns=["Date"])
+# --- 3. FONCTIONS DE CHARGEMENT ---
+def load_resa():
+    if os.path.exists(RESA_FILE):
+        df = pd.read_csv(RESA_FILE, dtype=str)
+        df["Date Arrivée"] = pd.to_datetime(df["Date Arrivée"], errors='coerce').dt.date
+        df["Montant"] = pd.to_numeric(df["Montant"], errors='coerce').fillna(0.0)
+        return df
+    return pd.DataFrame()
 
-df_menages_014 = load_menages_014()
-
-# --- SÉCURITÉ ---
+# --- 4. SÉCURITÉ ---
 def check_password():
-    def password_entered():
-        user = st.session_state["username"]
-        pwd = st.session_state["password"]
-        if user in st.secrets["passwords"] and pwd == st.secrets["passwords"][user]:
-            st.session_state["password_correct"] = True
-            st.session_state["user_authenticated"] = user
-            del st.session_state["password"]
-            del st.session_state["username"]
-        else:
-            st.session_state["password_correct"] = False
-
     if "password_correct" not in st.session_state:
-        st.title("🏛️ Accès RNM IMMO")
-        st.text_input("Identifiant", key="username")
-        st.text_input("Mot de passe", type="password", key="password")
-        st.button("Se connecter", on_click=password_entered)
+        st.title("🔐 Accès RNM IMMO")
+        user = st.text_input("Identifiant")
+        pwd = st.text_input("Mot de passe", type="password")
+        if st.button("Se connecter"):
+            if user in st.secrets["passwords"] and pwd == st.secrets["passwords"][user]:
+                st.session_state["password_correct"] = True
+                st.session_state["user_authenticated"] = user
+                st.rerun()
+            else:
+                st.error("Identifiant ou mot de passe incorrect")
         return False
-    return st.session_state["password_correct"]
+    return True
 
-    if check_password():
+# --- 5. EXECUTION PRINCIPALE ---
+if check_password():
+    # CHARGEMENT DES DONNÉES (Dès le départ pour éviter le bug NameError)
+    df_resa = load_resa()
             
 
 with st.sidebar:
