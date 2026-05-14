@@ -41,7 +41,7 @@ def check_password():
         return False
     return st.session_state["password_correct"]
 
-if check_password():
+    if check_password():
             
 
 with st.sidebar:
