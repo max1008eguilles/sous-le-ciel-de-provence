@@ -81,7 +81,6 @@ if check_password():
     df_compta = load_compta()
     df_cfg = load_config()
     df_resa = load_resa()
-        
     df_obj_all = load_objectifs()
 
     def get_solde(compte_nom):
@@ -810,4 +809,111 @@ if check_password():
                 st.success("Enregistré !")
                 st.rerun()
 
+        #RO2026
+    elif page == "RO 2026":
+        st.title("🚀 RNM IMMO - Cockpit de Pilotage 2026")
+        mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
+        
+        # --- 1. RÉCUPÉRATION DES PARAMÈTRES SOURCES ---
+        # Crédits depuis RNM IMMO (Source: Capture 21.14.11)
+        CREDIT_119 = 689.72 
+        CREDIT_014 = 0.0
+        PRIX_MENAGE = 20.0
+
+        try:
+            df_compta = pd.read_csv("compta.csv")
+            df_obj = pd.read_csv("objectifs_014_v2.csv")
+        except:
+            df_compta = pd.DataFrame() ; df_obj = pd.DataFrame()
+
+        # --- 2. CALCULS DE PERFORMANCE (DATA ENGINE) ---
+        stats = {m: {"014": {}, "119": {}, "RNM": {}} for m in mois_noms}
+        df_resa['Date Arrivée'] = pd.to_datetime(df_resa['Date Arrivée'], errors='coerce')
+        
+        for i, mois in enumerate(mois_noms):
+            m_num = i + 1
+            # Filtrage Data
+            res_m = df_resa[(df_resa['Date Arrivée'].dt.month == m_num) & (df_resa['Date Arrivée'].dt.year == 2026)]
+            res_014 = res_m[res_m["Appartement"].astype(str).str.contains("14|014")]
+            res_119 = res_m[res_m["Appartement"].astype(str) == "119"]
+            
+            # Métriques Studio 014
+            stats[mois]["014"]["CA"] = res_014["Montant"].sum()
+            stats[mois]["014"]["Nuits"] = res_014["Nuits"].sum() if "Nuits" in res_014.columns else len(res_014)
+            stats[mois]["014"]["Occ"] = (stats[mois]["014"]["Nuits"] / 31 * 100) # Simplifié
+            
+            # Métriques Studio 119
+            stats[mois]["119"]["CA"] = res_119["Montant"].sum()
+            stats[mois]["119"]["Nuits"] = res_119["Nuits"].sum() if "Nuits" in res_119.columns else len(res_119)
+            stats[mois]["119"]["Occ"] = (stats[mois]["119"]["Nuits"] / 31 * 100)
+            
+            # Métriques Global RNM
+            stats[mois]["RNM"]["CA"] = stats[mois]["014"]["CA"] + stats[mois]["119"]["CA"]
+            stats[mois]["RNM"]["Nuits"] = stats[mois]["014"]["Nuits"] + stats[mois]["119"]["Nuits"]
+            stats[mois]["RNM"]["Occ"] = (stats[mois]["RNM"]["Nuits"] / 62 * 100)
+            stats[mois]["RNM"]["PMoy"] = (stats[mois]["RNM"]["CA"] / stats[mois]["RNM"]["Nuits"]) if stats[mois]["RNM"]["Nuits"] > 0 else 0
+            
+            # Charges (Compta) & Crédits
+            ch_m = 0.0
+            if not df_compta.empty:
+                df_compta['Date'] = pd.to_datetime(df_compta['Date'], errors='coerce')
+                ch_m = df_compta[(df_compta['Date'].dt.month == m_num) & (df_compta['Type'] == "Dépense")]["Montant"].sum()
+            
+            stats[mois]["RNM"]["Charges"] = ch_m
+            stats[mois]["RNM"]["Credits"] = CREDIT_119 + CREDIT_014
+            stats[mois]["RNM"]["Net"] = stats[mois]["RNM"]["CA"] - ch_m - stats[mois]["RNM"]["Credits"]
+
+        # --- 3. AFFICHAGE DES KPI GLOBAUX (Haut de page) ---
+        total_ca = sum(m["RNM"]["CA"] for m in stats.values())
+        total_net = sum(m["RNM"]["Net"] for m in stats.values())
+        occ_moy = sum(m["RNM"]["Occ"] for m in stats.values()) / 12
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("💰 CA Annuel Cumulé", f"{total_ca:,.0f} €")
+        c2.metric("📈 Taux d'Occupation Moyen", f"{occ_moy:.1f} %")
+        c3.metric("📊 Cash Flow Net (An)", f"{total_net:,.0f} €")
+        
+        st.divider()
+
+        # --- 4. TABLEAU DE BORD MODERNE (MODALITÉS DE PILOTAGE) ---
+        st.subheader("🗓️ Analyse Mensuelle Consolidée")
+        
+        # Construction d'un DataFrame propre pour l'affichage
+        pilotage_data = []
+        for m in mois_noms:
+            pilotage_data.append({
+                "Mois": m,
+                "CA RNM": stats[m]["RNM"]["CA"],
+                "Occ %": stats[m]["RNM"]["Occ"],
+                "Prix Moy.": stats[m]["RNM"]["PMoy"],
+                "Charges (Compta)": stats[m]["RNM"]["Charges"],
+                "Crédits": stats[m]["RNM"]["Credits"],
+                "NET (Cash Flow)": stats[m]["RNM"]["Net"],
+                "CA 014": stats[m]["014"]["CA"],
+                "CA 119": stats[m]["119"]["CA"]
+            })
+        
+        df_final = pd.DataFrame(pilotage_data).set_index("Mois")
+        
+        # Affichage avec formatage
+        st.dataframe(
+            df_final.style.format({
+                "CA RNM": "{:,.0f} €", "Occ %": "{:.1f} %", "Prix Moy.": "{:.1f} €",
+                "Charges (Compta)": "{:,.0f} €", "Crédits": "{:,.2f} €", 
+                "NET (Cash Flow)": "{:,.0f} €", "CA 014": "{:,.0f} €", "CA 119": "{:,.0f} €"
+            }), 
+            use_container_width=True
+        )
+
+        # --- 5. FOCUS PAR APPARTEMENT ---
+        st.divider()
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.write("**Performance Studio 014**")
+            st.caption(f"CA Annuel : {sum(m['014']['CA'] for m in stats.values()):,.0f} €")
+            st.caption(f"Occupation : {sum(m['014']['Occ'] for m in stats.values())/12:.1f} %")
+        with col_b:
+            st.write("**Performance Studio 119**")
+            st.caption(f"CA Annuel : {sum(m['119']['CA'] for m in stats.values()):,.0f} €")
+            st.caption(f"Occupation : {sum(m['119']['Occ'] for m in stats.values())/12:.1f} %")
 
