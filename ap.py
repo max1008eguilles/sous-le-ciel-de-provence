@@ -9,13 +9,9 @@ from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
 from streamlit_calendar import calendar
 
-# INITIALISATION DE LA CONNEXION (Remplace les lignes 12 à 18)
-conn = st.connection(
-    "gsheets",
-    type=GSheetsConnection,
-    spreadsheet="https://docs.google.com/spreadsheets/d/1-t9N_bqsVbrbweCnfvUuyJwiA-q9ClYM-d9JWHdbdrM/edit#gid=0",
-    service_account="upheld-display-496410-b4-a3935d2ee684.json"
-)
+# INITIALISATION DE LA CONNEXION
+# On ne passe plus le nom du fichier ici, on laisse Streamlit le chercher dans les secrets
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 # 2. Fonction magique qui crée tes onglets s'ils n'existent pas
 def preparer_ma_base_de_donnees():
