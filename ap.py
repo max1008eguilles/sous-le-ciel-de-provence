@@ -8,6 +8,35 @@ from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
 from streamlit_calendar import calendar
 
+# --- AJOUTE CECI JUSTE APRÈS TES IMPORTS ---
+
+# 1. Établir la connexion
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+# 2. Fonction magique qui crée tes onglets s'ils n'existent pas
+def preparer_ma_base_de_donnees():
+    # On définit ce qu'on veut comme colonnes
+    onglets = {
+        "Biens": ["Bien", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité"],
+        "Compta": ["Date", "Type", "Compte", "Montant", "Commentaire"],
+        "Reservations": ["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Montant", "Mail"],
+        "Statut_Menages": ["Clef", "Date", "Appartement", "Réglé", "Deja_Envoye"],
+        "Courses": ["Montant"]
+    }
+    
+    for nom, colonnes in onglets.items():
+        try:
+            # On teste si l'onglet existe
+            conn.read(worksheet=nom)
+        except:
+            # S'il n'existe pas, on le crée proprement avec ses titres
+            df_vide = pd.DataFrame(columns=colonnes)
+            conn.update(worksheet=nom, data=df_vide)
+            st.toast(f"✅ Onglet {nom} créé sur le Drive !")
+
+# 3. On lance l'outil
+preparer_ma_base_de_donnees()
+
 # --- CONFIG DE LA PAGE ---
 st.set_page_config(page_title="RNM IMMO - Expert", layout="wide")
 
