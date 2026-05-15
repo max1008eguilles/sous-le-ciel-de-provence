@@ -35,7 +35,7 @@ def preparer_ma_base_de_donnees():
             st.toast(f"✅ Onglet {nom} créé sur le Drive !")
 
 # 3. On lance l'outil
-preparer_ma_base_de_donnees()
+#preparer_ma_base_de_donnees()
 
 # --- CONFIG DE LA PAGE ---
 st.set_page_config(page_title="RNM IMMO - Expert", layout="wide")
