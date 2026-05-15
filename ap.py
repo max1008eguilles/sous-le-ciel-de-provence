@@ -78,30 +78,33 @@ if check_password():
     OBJ_FILE = "objectifs_014_v2.csv"
 
     def load_config():
-        if os.path.exists(CONFIG_FILE):
-            df = pd.read_csv(CONFIG_FILE)
+        try:
+            df = conn.read(worksheet="Biens")
             if "Date Début" in df.columns:
                 df["Date Début"] = pd.to_datetime(df["Date Début"]).dt.date
             return df
-        return pd.DataFrame(columns=["Bien", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"])
+        except:
+            return pd.DataFrame(columns=["Bien", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"])
 
     def load_compta():
-        if os.path.exists(COMPTA_FILE):
-            df = pd.read_csv(COMPTA_FILE)
-            df["Date"] = pd.to_datetime(df["Date"]).dt.date
+        try:
+            df = conn.read(worksheet="Compta")
+            if not df.empty:
+                df["Date"] = pd.to_datetime(df["Date"]).dt.date
             return df
-        return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])
+        except:
+            return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])
 
     def load_resa():
-        if os.path.exists(RESA_FILE):
-            df = pd.read_csv(RESA_FILE, dtype=str)
-            df["Date Arrivée"] = pd.to_datetime(df["Date Arrivée"], errors='coerce').dt.date
-            df["Date Départ"] = pd.to_datetime(df["Date Départ"], errors='coerce').dt.date
-            if "Montant" in df.columns:
-                df["Montant"] = pd.to_numeric(df["Montant"], errors='coerce').fillna(0.0)
+        try:
+            df = conn.read(worksheet="Reservations")
+            if not df.empty:
+                df["Date Arrivée"] = pd.to_datetime(df["Date Arrivée"], errors='coerce').dt.date
+                df["Date Départ"] = pd.to_datetime(df["Date Départ"], errors='coerce').dt.date
             return df
-        return pd.DataFrame(columns=["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Montant", "Numéro tel", "Mail", "Code Résidence", "Code Studio", "Code Autre"])
-
+        except:
+            return pd.DataFrame(columns=["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Montant", "Numéro tel", "Mail", "Code Résidence", "Code Studio", "Code Autre"])
+            
     def load_objectifs():
         if os.path.exists(OBJ_FILE):
             return pd.read_csv(OBJ_FILE)
