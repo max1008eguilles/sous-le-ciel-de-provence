@@ -9,7 +9,6 @@ from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
 from streamlit_calendar import calendar
 
-# Utilise le nom EXACT du fichier que tu as uploadé sur GitHub
 conn = st.connection("gsheets", type=GSheetsConnection, service_account="upheld-display-496410-b4-a3935d2ee684.json")
 
 # 2. Fonction magique qui crée tes onglets s'ils n'existent pas
