@@ -9,7 +9,7 @@ from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
 from streamlit_calendar import calendar
 
-# CONNEXION DIRECTE (Remplace les lignes 12 à 17)
+# INITIALISATION DE LA CONNEXION (Remplace les lignes 12 à 18)
 conn = st.connection(
     "gsheets",
     type=GSheetsConnection,
