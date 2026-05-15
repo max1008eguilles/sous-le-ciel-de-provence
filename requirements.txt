@@ -4,3 +4,5 @@ plotly
 python-dateutil
 numpy
 streamlit-calendar
+st-gsheets-connection
+gspread
