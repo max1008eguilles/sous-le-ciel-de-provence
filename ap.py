@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection  # <--- CETTE LIGNE EST INDISPENSABLE
 import pandas as pd
 import numpy as np
 import os
