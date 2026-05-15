@@ -77,20 +77,17 @@ if check_password():
     RESA_FILE = "reservations.csv"
     OBJ_FILE = "objectifs_014_v2.csv"
 
+    # REMPLACE TES ANCIENNES FONCTIONS PAR CELLES-CI :
     def load_config():
         try:
-            df = conn.read(worksheet="Biens")
-            if "Date Début" in df.columns:
-                df["Date Début"] = pd.to_datetime(df["Date Début"]).dt.date
-            return df
+            return conn.read(worksheet="Biens")
         except:
             return pd.DataFrame(columns=["Bien", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"])
 
     def load_compta():
         try:
             df = conn.read(worksheet="Compta")
-            if not df.empty:
-                df["Date"] = pd.to_datetime(df["Date"]).dt.date
+            df["Date"] = pd.to_datetime(df["Date"]).dt.date
             return df
         except:
             return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])
@@ -98,12 +95,11 @@ if check_password():
     def load_resa():
         try:
             df = conn.read(worksheet="Reservations")
-            if not df.empty:
-                df["Date Arrivée"] = pd.to_datetime(df["Date Arrivée"], errors='coerce').dt.date
-                df["Date Départ"] = pd.to_datetime(df["Date Départ"], errors='coerce').dt.date
+            df["Date Arrivée"] = pd.to_datetime(df["Date Arrivée"]).dt.date
+            df["Date Départ"] = pd.to_datetime(df["Date Départ"]).dt.date
             return df
         except:
-            return pd.DataFrame(columns=["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Montant", "Numéro tel", "Mail", "Code Résidence", "Code Studio", "Code Autre"])
+            return pd.DataFrame(columns=["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Montant", "Numéro tel", "Mail"])
             
     def load_objectifs():
         if os.path.exists(OBJ_FILE):
