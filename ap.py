@@ -45,41 +45,46 @@ def check_password():
 
 if check_password():
     
-    CONFIG_FILE = "config_biens_v3.csv"
-    COMPTA_FILE = "compta_v3.csv"
-    RESA_FILE = "reservations.csv"
-    OBJ_FILE = "objectifs_014_v2.csv"
-
+    # --- FONCTIONS DE LECTURE DEPUIS LA BASE DE DONNÉES SQL (SUPABASE) ---
     def load_config():
-        if os.path.exists(CONFIG_FILE):
-            df = pd.read_csv(CONFIG_FILE)
-            if "Date Début" in df.columns:
+        try:
+            df = conn.query("SELECT * FROM config_biens;", ttl="0m")
+            if not df.empty and "Date Début" in df.columns:
                 df["Date Début"] = pd.to_datetime(df["Date Début"]).dt.date
             return df
-        return pd.DataFrame(columns=["Bien", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"])
+        except:
+            return pd.DataFrame(columns=["Bien", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"])
 
     def load_compta():
-        if os.path.exists(COMPTA_FILE):
-            df = pd.read_csv(COMPTA_FILE)
-            df["Date"] = pd.to_datetime(df["Date"]).dt.date
+        try:
+            df = conn.query("SELECT * FROM compta;", ttl="0m")
+            if not df.empty and "Date" in df.columns:
+                df["Date"] = pd.to_datetime(df["Date"]).dt.date
             return df
-        return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])
+        except:
+            return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])
 
     def load_resa():
-        if os.path.exists(RESA_FILE):
-            df = pd.read_csv(RESA_FILE, dtype=str)
-            df["Date Arrivée"] = pd.to_datetime(df["Date Arrivée"], errors='coerce').dt.date
-            df["Date Départ"] = pd.to_datetime(df["Date Départ"], errors='coerce').dt.date
-            if "Montant" in df.columns:
-                df["Montant"] = pd.to_numeric(df["Montant"], errors='coerce').fillna(0.0)
+        try:
+            df = conn.query("SELECT * FROM reservations;", ttl="0m")
+            if not df.empty:
+                if "Date Arrivée" in df.columns:
+                    df["Date Arrivée"] = pd.to_datetime(df["Date Arrivée"], errors='coerce').dt.date
+                if "Date Départ" in df.columns:
+                    df["Date Départ"] = pd.to_datetime(df["Date Départ"], errors='coerce').dt.date
+                if "Montant" in df.columns:
+                    df["Montant"] = pd.to_numeric(df["Montant"], errors='coerce').fillna(0.0)
             return df
-        return pd.DataFrame(columns=["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Montant", "Numéro tel", "Mail", "Code Résidence", "Code Studio", "Code Autre"])
+        except:
+            return pd.DataFrame(columns=["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Montant", "Numéro tel", "Mail", "Code Résidence", "Code Studio", "Code Autre"])
 
     def load_objectifs():
-        if os.path.exists(OBJ_FILE):
-            return pd.read_csv(OBJ_FILE)
-        return pd.DataFrame(columns=["Année", "Mois", "Objectif"])
+        try:
+            return conn.query("SELECT * FROM objectifs_014;", ttl="0m")
+        except:
+            return pd.DataFrame(columns=["Année", "Mois", "Objectif"])
 
+    # Chargement initial des données en direct depuis Supabase
     df_compta = load_compta()
     df_cfg = load_config()
     df_resa = load_resa()
