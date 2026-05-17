@@ -6,4 +6,5 @@ numpy
 streamlit-calendar
 st-gsheets-connection
 gspread
-PyGithub
+SQLAlchemy
+psycopg2-binary
