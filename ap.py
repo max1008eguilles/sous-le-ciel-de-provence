@@ -85,6 +85,29 @@ if check_password():
     df_resa = load_resa()
     df_obj_all = load_objectifs()
 
+    # --- FONCTION DE SAUVEGARDE AUTOMATIQUE SUR GITHUB ---
+    def sauvegarder_sur_github(nom_fichier, message_commit):
+        if "GITHUB_TOKEN" in st.secrets:
+            try:
+                g = Github(st.secrets["GITHUB_TOKEN"])
+                repo = g.get_repo(st.secrets["GITHUB_REPO"])
+                
+                # On lit le contenu du fichier local
+                with open(nom_fichier, "r", encoding="utf-8") as f:
+                    content = f.read()
+                
+                # On cherche si le fichier existe déjà sur GitHub pour le mettre à jour
+                try:
+                    contents = repo.get_contents(nom_fichier)
+                    repo.update_file(contents.path, message_commit, content, contents.sha)
+                except:
+                    # Si le fichier n'existe pas encore sur GitHub, on le crée
+                    repo.create_file(nom_fichier, message_commit, content)
+                    
+                st.toast(f"☁️ Sync GitHub réussie : {nom_fichier}")
+            except Exception as e:
+                st.error(f"Erreur de synchronisation GitHub : {e}")
+
     def get_solde(compte_nom):
         if df_compta.empty: return 0.0
         df_c = df_compta[df_compta["Compte"] == compte_nom]
