@@ -172,7 +172,7 @@ if check_password():
         edited_df = st.data_editor(df_cfg, num_rows="dynamic", use_container_width=True)
         if st.button("💾 Sauvegarder Biens"):
             cols_save = [c for c in edited_df.columns if c not in ["Capital Restant", "Patrimoine Net Bien", "% Net", "% Dette"]]
-            edited_df[cols_save].to_csv(CONFIG_FILE, index=False)
+            edited_df[cols_save].to_sql("config_biens", conn.engine, if_exists="replace", index=False)
             st.rerun()
         if not df_cfg.empty:
             st.divider()
