@@ -247,7 +247,7 @@ if check_password():
                         with open(p_file, "wb") as f: f.write(f_file.getbuffer())
                     new_entry = pd.DataFrame([{"Date": str(f_date), "Type": f_type, "Compte": f_cpt, "Montant": f_mnt, "Commentaire": f_com, "Justificatif": p_file}])
                     df_compta = pd.concat([df_compta, new_entry], ignore_index=True)
-                    df_compta.to_csv(COMPTA_FILE, index=False)
+                    new_entry.to_sql("compta", conn.engine, if_exists="append", index=False)
                     st.rerun()
 
         st.divider()
