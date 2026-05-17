@@ -168,6 +168,7 @@ if check_password():
         if st.button("💾 Sauvegarder Biens"):
             cols_save = [c for c in edited_df.columns if c not in ["Capital Restant", "Patrimoine Net Bien", "% Net", "% Dette"]]
             edited_df[cols_save].to_csv(CONFIG_FILE, index=False)
+            sauvegarder_sur_github(CONFIG_FILE, "Mise à jour des biens depuis Streamlit")
             st.rerun()
         if not df_cfg.empty:
             st.divider()
@@ -243,6 +244,7 @@ if check_password():
                     new_entry = pd.DataFrame([{"Date": str(f_date), "Type": f_type, "Compte": f_cpt, "Montant": f_mnt, "Commentaire": f_com, "Justificatif": p_file}])
                     df_compta = pd.concat([df_compta, new_entry], ignore_index=True)
                     df_compta.to_csv(COMPTA_FILE, index=False)
+                    sauvegarder_sur_github(CONFIG_FILE, "Mise à jour des biens depuis Streamlit")
                     st.rerun()
 
         st.divider()
@@ -275,6 +277,7 @@ if check_password():
                         except: pass
                         df_compta.at[vrai_idx, "Justificatif"] = "Vide"
                         df_compta.to_csv(COMPTA_FILE, index=False)
+                        sauvegarder_sur_github(CONFIG_FILE, "Mise à jour des biens depuis Streamlit")
                         st.rerun()
                 else: st.warning("Pas de fichier.")
             with g2:
@@ -285,6 +288,7 @@ if check_password():
                         with open(fp, "wb") as f: f.write(new_up.getbuffer())
                         df_compta.at[vrai_idx, "Justificatif"] = fp
                         df_compta.to_csv(COMPTA_FILE, index=False)
+                        sauvegarder_sur_github(CONFIG_FILE, "Mise à jour des biens depuis Streamlit")
                         st.rerun()
             with g3:
                 if st.button("🛑 SUPPRIMER LA LIGNE", type="primary", key=f"del_l_{vrai_idx}"):
@@ -293,6 +297,7 @@ if check_password():
                         except: pass
                     df_compta = df_compta.drop(vrai_idx)
                     df_compta.to_csv(COMPTA_FILE, index=False)
+                    sauvegarder_sur_github(CONFIG_FILE, "Mise à jour des biens depuis Streamlit")
                     st.rerun()
 
     # --- PAGE RÉSERVATIONS ---
@@ -332,6 +337,7 @@ if check_password():
             df_to_save['Code Autre'] = df_to_save.apply(get_code_autre, axis=1)
             df_to_save = df_to_save.sort_values(by="Date Arrivée", ascending=False)
             df_to_save.to_csv(RESA_FILE, index=False)
+            sauvegarder_sur_github(CONFIG_FILE, "Mise à jour des biens depuis Streamlit")
             st.success("Sauvegarde réussie !")
             st.rerun()
         st.divider()
@@ -372,6 +378,7 @@ if check_password():
             if st.button("💾 Sauvegarder Objectifs"):
                 df_obj_others = df_obj_all[df_obj_all["Année"] != sel_year]
                 pd.concat([df_obj_others, edited_obj], ignore_index=True).to_csv(OBJ_FILE, index=False)
+                sauvegarder_sur_github(CONFIG_FILE, "Mise à jour des biens depuis Streamlit")
                 st.rerun()
         
         st.divider()
@@ -503,6 +510,7 @@ if check_password():
 
             # 4. Sauvegarder le tout
             df_final.to_csv(MENAGE_014_FILE, index=False)
+            sauvegarder_sur_github(CONFIG_FILE, "Mise à jour des biens depuis Streamlit")
             st.success("Modifications enregistrées (Historique conservé) !")
             st.rerun()
             
@@ -665,6 +673,7 @@ if check_password():
 
             # 4. Sauvegarder
             df_final.to_csv(MENAGE_119_FILE, index=False)
+            sauvegarder_sur_github(CONFIG_FILE, "Mise à jour des biens depuis Streamlit")
             st.success("Modifications enregistrées pour le 119 (Historique conservé) !")
             st.rerun()
    
@@ -800,6 +809,7 @@ if check_password():
                 if st.button("✅ Marquer comme notifiés"):
                     # On enregistre toutes les clefs actuelles comme étant "déjà envoyées"
                     pd.DataFrame({"Clef": list(set(list_envoyes + nouvelles_clefs))}).to_csv(ENVOYES_FILE, index=False)
+                    sauvegarder_sur_github(CONFIG_FILE, "Mise à jour des biens depuis Streamlit")
                     st.success("Planning actualisé !")
                     st.rerun()
 
@@ -831,6 +841,7 @@ if check_password():
                 for _, row in edited_df.iterrows():
                     dict_paye[row["Clef"]] = row["Payé"]
                 pd.DataFrame([{"Clef": k, "Payé": v} for k, v in dict_paye.items()]).to_csv(PAIEMENTS_FILE, index=False)
+                sauvegarder_sur_github(CONFIG_FILE, "Mise à jour des biens depuis Streamlit")
                 st.success("Enregistré !")
                 st.rerun()
 
