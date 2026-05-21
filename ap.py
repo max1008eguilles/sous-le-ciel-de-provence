@@ -304,11 +304,14 @@ if check_password():
     elif page == "Réservations":
         st.title("📅 Gestion & Envois")
         
-        # S'assurer que le DataFrame global n'est pas None et nettoyer les valeurs manquantes
+        # Ajout de "Plateforme" dans les colonnes par défaut si la table est vide
         if df_resa is None or df_resa.empty:
-            df_resa = pd.DataFrame(columns=["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Montant", "Numéro tel", "Mail", "Code Résidence", "Code Studio", "Code Autre", "Guide Envoyé"])
+            df_resa = pd.DataFrame(columns=["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Plateforme", "Montant", "Numéro tel", "Mail", "Code Résidence", "Code Studio", "Code Autre", "Guide Envoyé"])
         else:
             df_resa = df_resa.fillna("").astype(str)
+            # Sécurité : si la colonne n'existe pas encore dans ta base Supabase, on la crée vide pour éviter les bugs
+            if "Plateforme" not in df_resa.columns:
+                df_resa["Plateforme"] = ""
 
         # Conversion des dates en chaînes de caractères pour les filtres textuels
         df_resa["Date Arrivée"] = df_resa["Date Arrivée"].astype(str)
@@ -336,9 +339,15 @@ if check_password():
         
         empty_row = pd.DataFrame([{col: "" for col in df_display.columns}])
         empty_row["Guide Envoyé"] = "Non"
+        empty_row["Plateforme"] = "Airbnb"  # Option par défaut pour la nouvelle ligne
         df_with_add = pd.concat([empty_row, df_display], ignore_index=True)
         
-        column_config = {"Guide Envoyé": st.column_config.SelectboxColumn(options=["Non", "Oui"], default="Non")}
+        # Configuration des listes déroulantes (Guide Envoyé ET Plateforme)
+        column_config = {
+            "Guide Envoyé": st.column_config.SelectboxColumn(options=["Non", "Oui"], default="Non"),
+            "Plateforme": st.column_config.SelectboxColumn(options=["Airbnb", "Booking", "Direct"], default="Airbnb")
+        }
+        
         edited_resa = st.data_editor(df_with_add, num_rows="dynamic", use_container_width=True, key="editor_final_stable", column_config=column_config)
         
         if st.button("💾 SAUVEGARDER LES MODIFICATIONS"):
@@ -352,10 +361,10 @@ if check_password():
             df_to_save['Code Autre'] = df_to_save.apply(get_code_autre, axis=1)
             df_to_save = df_to_save.sort_values(by="Date Arrivée", ascending=False)
             
-            # REMPLACEMENT DU TO_CSV PAR L'ÉCRITURE SQL SUPABASE
+            # Sauvegarde dans Supabase (mettra automatiquement à jour la structure de la table pour inclure la colonne)
             df_to_save.to_sql("reservations", conn.engine, if_exists="replace", index=False)
             
-            st.success("Sauvegarde réussie dans Supabase !")
+            st.success("Sauvegarde réussie dans Supabase avec la plateforme !")
             st.rerun()
             
         st.divider()
@@ -363,13 +372,16 @@ if check_password():
         calendar_events = []
         for _, row in df_resa.iterrows():
             if row['Date Arrivée'] and row['Date Départ']:
+                # Optionnel : On affiche le nom de la plateforme dans le calendrier à côté du nom
+                plat = f" [{row['Plateforme']}]" if row.get('Plateforme') else ""
                 calendar_events.append({
-                    "title": f"{row['Prénom_Nom']} ({row['Appartement']})", 
+                    "title": f"{row['Prénom_Nom']}{plat} ({row['Appartement']})", 
                     "start": row['Date Arrivée'], 
                     "end": row['Date Départ'], 
                     "color": "#FF4B4B" if "14" in str(row['Appartement']) else "#1C83E1"
                 })
         calendar(events=calendar_events, options={"initialView": "dayGridMonth"}, key="cal_final")
+        
         
     # --- PAGE DÉTAIL 014 ---
     elif page == "Détail 014":
