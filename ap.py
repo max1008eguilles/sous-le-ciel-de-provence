@@ -387,19 +387,19 @@ if check_password():
     elif page == "Détail 014":
         st.title("🏠 Détail Studio 014")
         
-        # --- LOGIQUE MÉNAGES ---
-        MENAGE_014_FILE = "menages_manuels_014.csv"
+        # --- LOGIQUE MÉNAGES (MODIFIÉE POUR SUPABASE) ---
         dict_menages = {}
         has_history = False
 
-        if os.path.exists(MENAGE_014_FILE):
-            try:
-                df_m_save = pd.read_csv(MENAGE_014_FILE)
-                if "Etat" in df_m_save.columns:
-                    dict_menages = dict(zip(df_m_save["Date"], df_m_save["Etat"].astype(bool)))
-                    has_history = True
-            except Exception:
-                pass 
+        # Lecture de l'historique des ménages depuis Supabase
+        try:
+            df_m_save = pd.read_sql("menages_manuels_014", conn.engine)
+            if "Etat" in df_m_save.columns:
+                # Conversion propre des types pour éviter les conflits de formats
+                dict_menages = dict(zip(df_m_save["Date"].astype(str), df_m_save["Etat"].astype(bool)))
+                has_history = True
+        except Exception:
+            pass 
 
         # --- CONFIGURATION OBJECTIFS (Expander) ---
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
@@ -418,20 +418,20 @@ if check_password():
         st.divider()
 
         # --- CALCUL DES DONNÉES (MOIS & ANNÉE CUMULÉE) ---
-        # Données de base pour le 014
         resa_014 = df_resa[df_resa["Appartement"].isin(["014", "14", 14])].copy()
         
-        # 1. Calcul Annuel Cumulé (du 01/01 au dernier jour du mois sélectionné)
+        # 1. Calcul Annuel Cumulé
         last_day_selected_month = (date(sel_year, sel_month % 12 + 1, 1) - timedelta(days=1)) if sel_month < 12 else date(sel_year, 12, 31)
         
-        # Filtre les résas qui touchent à l'année en cours jusqu'au mois sélectionné
         real_an_cumule = 0.0
         nuits_an_cumule = 0
         
         for _, r in resa_014.iterrows():
             if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
-                d_arr, d_dep = r["Date Arrivée"], r["Date Départ"]
-                # On ne compte que les nuitées comprises entre le 01/01 et la fin du mois choisi
+                # Sécurité conversion date si format texte
+                d_arr = pd.to_datetime(r["Date Arrivée"]).date() if not isinstance(r["Date Arrivée"], date) else r["Date Arrivée"]
+                d_dep = pd.to_datetime(r["Date Départ"]).date() if not isinstance(r["Date Départ"], date) else r["Date Départ"]
+                
                 delta = (d_dep - d_arr).days
                 if delta > 0:
                     prix_par_nuit = float(r["Montant"]) / delta
@@ -442,7 +442,6 @@ if check_password():
                             nuits_an_cumule += 1
                         curr += timedelta(days=1)
 
-        # Objectif annuel cumulé
         obj_an_cumule = edited_obj.iloc[:sel_month]["Objectif"].sum()
 
         # 2. Calcul spécifique au Mois Sélectionné
@@ -452,7 +451,9 @@ if check_password():
         
         for _, r in resa_014.iterrows():
             if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
-                d_arr, d_dep = r["Date Arrivée"], r["Date Départ"]
+                d_arr = pd.to_datetime(r["Date Arrivée"]).date() if not isinstance(r["Date Arrivée"], date) else r["Date Arrivée"]
+                d_dep = pd.to_datetime(r["Date Départ"]).date() if not isinstance(r["Date Départ"], date) else r["Date Départ"]
+                
                 delta = (d_dep - d_arr).days
                 if delta > 0:
                     prix_par_nuit = float(r["Montant"]) / delta
@@ -477,7 +478,7 @@ if check_password():
         a3.metric("% vs Objectif", f"{(real_an_cumule/obj_an_cumule*100 if obj_an_cumule>0 else 0):.1f}%")
         a4.metric("Total Nuits", f"{nuits_an_cumule} j")
 
-        st.write("") # Espacement
+        st.write("") 
 
         st.subheader(f"📅 Détail du mois : {mois_noms[sel_month-1]}")
         m1, m2, m3, m4, m5, m6 = st.columns(6)
@@ -525,26 +526,30 @@ if check_password():
             key="unique_editor_014"
         )
 
+        # --- SAUVEGARDER LE PLANNING (MODIFIÉ POUR SUPABASE) ---
         if st.button("💾 Enregistrer le planning"):
-            # 1. Charger l'existant pour ne pas perdre les autres mois
-            if os.path.exists(MENAGE_014_FILE):
-                df_global = pd.read_csv(MENAGE_014_FILE)
-            else:
+            # 1. Charger l'existant depuis Supabase pour ne pas perdre les autres mois
+            try:
+                df_global = pd.read_sql("menages_manuels_014", conn.engine)
+            except Exception:
                 df_global = pd.DataFrame(columns=["Date", "Etat"])
 
             # 2. Préparer les données du mois actuel
             df_month = pd.DataFrame({
-                "Date": edited_df["Date_Full"],
-                "Etat": edited_df["Ménage"]
+                "Date": edited_df["Date_Full"].astype(str),
+                "Etat": edited_df["Ménage"].astype(bool)
             })
 
-            # 3. Fusionner : On enlève les dates du mois en cours de l'historique et on ajoute les nouvelles
-            df_global = df_global[~df_global["Date"].isin(df_month["Date"])]
+            # 3. Fusionner : On nettoie et on concatène
+            if not df_global.empty:
+                df_global["Date"] = df_global["Date"].astype(str)
+                df_global = df_global[~df_global["Date"].isin(df_month["Date"])]
+            
             df_final = pd.concat([df_global, df_month], ignore_index=True)
 
-            # 4. Sauvegarder le tout
-            df_final.to_csv(MENAGE_014_FILE, index=False)
-            st.success("Modifications enregistrées (Historique conservé) !")
+            # 4. Sauvegarder dans Supabase
+            df_final.to_sql("menages_manuels_014", conn.engine, if_exists="replace", index=False)
+            st.success("Modifications enregistrées dans Supabase !")
             st.rerun()
             
     # --- PAGE DÉTAIL 119 ---
