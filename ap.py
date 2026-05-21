@@ -401,7 +401,14 @@ if check_password():
         except Exception:
             pass 
 
-        # --- CONFIGURATION OBJECTIFS (Expander) ---
+       # --- CONFIGURATION OBJECTIFS (Expander) ---
+        
+        # Sécurité de chargement depuis Supabase spécifique au 014
+        try:
+            df_obj_all = pd.read_sql("config_objectifs_014", conn.engine)
+        except Exception:
+            df_obj_all = pd.DataFrame(columns=["Année", "Mois", "Objectif"])
+
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
         df_obj_year = df_obj_all[df_obj_all["Année"] == sel_year].copy()
         if df_obj_year.empty:
@@ -412,11 +419,17 @@ if check_password():
                 column_config={"Année": None, "Mois": st.column_config.TextColumn(disabled=True), "Objectif": st.column_config.NumberColumn("Objectif (€)", format="%.2f €")})
             if st.button("💾 Sauvegarder Objectifs"):
                 df_obj_others = df_obj_all[df_obj_all["Année"] != sel_year]
-                pd.concat([df_obj_others, edited_obj], ignore_index=True).to_csv(OBJ_FILE, index=False)
+                
+                # Fusionner l'historique avec les modifications
+                df_obj_final = pd.concat([df_obj_others, edited_obj], ignore_index=True)
+                
+                # Sauvegarde sur la table Supabase du 014
+                df_obj_final.to_sql("config_objectifs_014", conn.engine, if_exists="replace", index=False)
+                st.success("Objectifs du 014 mis à jour dans Supabase !")
                 st.rerun()
         
         st.divider()
-
+        
         # --- CALCUL DES DONNÉES (MOIS & ANNÉE CUMULÉE) ---
         resa_014 = df_resa[df_resa["Appartement"].isin(["014", "14", 14])].copy()
         
