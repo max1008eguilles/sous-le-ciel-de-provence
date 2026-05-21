@@ -792,10 +792,10 @@ if check_password():
                 if nom_client != "" and d_depart_str != "":
                     if "14" in appt_raw:
                         appt_name = "Studio 014"
-                        est_conserve = dict_details_014.get(d_depart_str, False)
+                        #est_conserve = dict_details_014.get(d_depart_str, False)
                     elif "119" in appt_raw:
                         appt_name = "Studio 119"
-                        est_conserve = dict_details_119.get(d_depart_str, False)
+                        #est_conserve = dict_details_119.get(d_depart_str, False)
                     else:
                         appt_name = f"Studio {appt_raw}"
                         est_conserve = True
