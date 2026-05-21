@@ -10,7 +10,6 @@ from streamlit_calendar import calendar
 # --- INITIALISATION DE LA CONNEXION SQL ---
 conn = st.connection("postgresql", type="sql")
 
-
 # --- CONFIG DE LA PAGE ---
 st.set_page_config(page_title="RNM IMMO - Expert", layout="wide")
 
@@ -566,28 +565,30 @@ if check_password():
             st.success("Modifications enregistrées dans Supabase !")
             st.rerun()
             
+    # --- PAGE DÉTAIL 119 ---
     elif page == "Détail 119":
         st.title("🏠 Détail Studio 119")
 
-        # 1. CHARGEMENT DES OBJECTIFS
+        # CHARGEMENT DES OBJECTIFS DEPUIS SUPABASE (Sécurité NameError)
         try:
             df_obj_all = pd.read_sql("config_objectifs", conn.engine)
         except Exception:
             df_obj_all = pd.DataFrame(columns=["Année", "Mois", "Objectif"])
         
-        # 2. LECTURE ET NORMALISATION DE L'HISTORIQUE (FORMAT STRICTURE %Y-%m-%d)
+        # --- LOGIQUE MÉNAGES SPÉCIFIQUE 119 (MODIFIÉE POUR SUPABASE) ---
         dict_menages = {}
         has_history = False
+
+        # Lecture de l'historique depuis Supabase
         try:
             df_m_save = pd.read_sql("menages_manuels_119", conn.engine)
-            if not df_m_save.empty:
-                df_m_save["Date"] = pd.to_datetime(df_m_save["Date"]).dt.strftime('%Y-%m-%d')
-                dict_menages = dict(zip(df_m_save["Date"], df_m_save["Etat"].astype(bool)))
+            if "Etat" in df_m_save.columns:
+                dict_menages = dict(zip(df_m_save["Date"].astype(str), df_m_save["Etat"].astype(bool)))
                 has_history = True
         except Exception:
             pass 
 
-        # 3. CONFIGURATION OBJECTIFS
+       # --- CONFIGURATION OBJECTIFS ---
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
         df_obj_year = df_obj_all[df_obj_all["Année"] == sel_year].copy()
         if df_obj_year.empty:
@@ -598,76 +599,147 @@ if check_password():
                 column_config={"Année": None, "Mois": st.column_config.TextColumn(disabled=True), "Objectif": st.column_config.NumberColumn("Objectif (€)", format="%.2f €")})
             if st.button("💾 Sauvegarder Objectifs 119"):
                 df_obj_others = df_obj_all[df_obj_all["Année"] != sel_year]
+                
+                # Fusionner les anciennes années avec les modifications de l'année en cours
                 df_obj_final = pd.concat([df_obj_others, edited_obj], ignore_index=True)
+                
+                # Sauvegarder dans Supabase au lieu du fichier CSV local
                 df_obj_final.to_sql("config_objectifs", conn.engine, if_exists="replace", index=False)
-                st.success("Objectifs mis à jour !")
+                st.success("Objectifs mis à jour dans Supabase !")
                 st.rerun()
 
-        # 4. CALCULS STATISTIQUES
-        resa_119 = df_resa[df_resa["Appartement"].astype(str).isin(["119"])].copy()
+        # --- CALCUL DES DONNÉES (MOIS & ANNÉE CUMULÉE) ---
+        resa_119 = df_resa[df_resa["Appartement"].isin(["119", 119])].copy()
+        
+        # 1. Calcul Annuel Cumulé
         last_day_selected_month = (date(sel_year, sel_month % 12 + 1, 1) - timedelta(days=1)) if sel_month < 12 else date(sel_year, 12, 31)
         
-        # Logique simplifiée pour les stats
-        real_an_cumule = 0.0 ; nuits_an_cumule = 0
+        real_an_cumule = 0.0
+        nuits_an_cumule = 0
+        
+        for _, r in resa_119.iterrows():
+            if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
+                d_arr = pd.to_datetime(r["Date Arrivée"]).date() if not isinstance(r["Date Arrivée"], date) else r["Date Arrivée"]
+                d_dep = pd.to_datetime(r["Date Départ"]).date() if not isinstance(r["Date Départ"], date) else r["Date Départ"]
+                
+                delta = (d_dep - d_arr).days
+                if delta > 0:
+                    prix_par_nuit = float(r["Montant"]) / delta
+                    curr = d_arr
+                    while curr < d_dep:
+                        if curr.year == sel_year and curr <= last_day_selected_month:
+                            real_an_cumule += prix_par_nuit
+                            nuits_an_cumule += 1
+                        curr += timedelta(days=1)
+
+        obj_an_cumule = edited_obj.iloc[:sel_month]["Objectif"].sum()
+
+        # 2. Calcul spécifique au Mois Sélectionné
         first_day_m = date(sel_year, sel_month, 1)
         days_list_m = [first_day_m + timedelta(days=i) for i in range((last_day_selected_month - first_day_m).days + 1)]
         month_data = {d: {"montant": 0.0, "client": "", "auto_menage": False} for d in days_list_m}
         
         for _, r in resa_119.iterrows():
-            d_arr = pd.to_datetime(r["Date Arrivée"]).date()
-            d_dep = pd.to_datetime(r["Date Départ"]).date()
-            delta = (d_dep - d_arr).days
-            if delta > 0:
-                prix_par_nuit = float(r["Montant"]) / delta
-                curr = d_arr
-                while curr < d_dep:
-                    if curr.year == sel_year:
-                        real_an_cumule += prix_par_nuit
-                        nuits_an_cumule += 1
-                    if curr in month_data:
-                        month_data[curr]["montant"] = prix_par_nuit
-                        month_data[curr]["client"] = r["Prénom_Nom"]
-                    curr += timedelta(days=1)
-                if d_dep in month_data:
-                    month_data[d_dep]["auto_menage"] = True
+            if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
+                d_arr = pd.to_datetime(r["Date Arrivée"]).date() if not isinstance(r["Date Arrivée"], date) else r["Date Arrivée"]
+                d_dep = pd.to_datetime(r["Date Départ"]).date() if not isinstance(r["Date Départ"], date) else r["Date Départ"]
+                
+                delta = (d_dep - d_arr).days
+                if delta > 0:
+                    prix_par_nuit = float(r["Montant"]) / delta
+                    curr = d_arr
+                    while curr < d_dep:
+                        if curr in month_data:
+                            month_data[curr]["montant"] = prix_par_nuit
+                            month_data[curr]["client"] = r["Prénom_Nom"]
+                        curr += timedelta(days=1)
+                    if d_dep in month_data:
+                        month_data[d_dep]["auto_menage"] = True
 
-        # 5. AFFICHAGE TABLEAU AVEC NORMALISATION DATE
+        real_m = sum(v["montant"] for v in month_data.values())
+        obj_m_val = edited_obj.iloc[sel_month-1]["Objectif"]
+        nuits_m = sum(1 for v in month_data.values() if v["montant"] > 0)
+
+        # --- AFFICHAGE DES MÉTRIQUES ---
+        st.subheader(f"📊 Statistiques Cumulées (Jan. à {mois_noms[sel_month-1]} {sel_year})")
+        a1, a2, a3, a4 = st.columns(4)
+        a1.metric("Réalisé Cumulé", f"{real_an_cumule:,.2f} €")
+        a2.metric("Objectif Cumulé", f"{obj_an_cumule:,.2f} €")
+        a3.metric("% vs Objectif", f"{(real_an_cumule/obj_an_cumule*100 if obj_an_cumule>0 else 0):.1f}%")
+        a4.metric("Total Nuits", f"{nuits_an_cumule} j")
+
+        st.write("") 
+
+        st.subheader(f"📅 Détail du mois : {mois_noms[sel_month-1]}")
+        m1, m2, m3, m4, m5, m6 = st.columns(6)
+        m1.metric("Mois", f"{real_m:,.2f} €")
+        m2.metric("Objectif", f"{obj_m_val:,.2f} €")
+        m3.metric("%", f"{(real_m/obj_m_val*100 if obj_m_val>0 else 0):.1f}%")
+        m4.metric("Nuits", f"{nuits_m} j")
+        m5.metric("Prix Moy.", f"{(real_m/nuits_m if nuits_m > 0 else 0):,.2f} €")
+        m6.metric("% Occ.", f"{(nuits_m/len(days_list_m)*100):.1f}%")
+
+        st.divider()
+
+        # --- TABLEAU UNIQUE INTERACTIF ---
         st.subheader("📋 Suivi Détaillé & Ménages (119)")
+        
         rows = []
         for d, v in month_data.items():
-            d_str = d.strftime('%Y-%m-%d') # NORMALISATION STRICTE
-            is_checked = dict_menages.get(d_str, v["auto_menage"])
+            d_str = str(d)
+            is_checked = dict_menages.get(d_str, v["auto_menage"]) if has_history else v["auto_menage"]
                 
             rows.append({
                 "Date_Full": d_str,
                 "Date": d.strftime("%d/%m"),
+                "Montant": f"{v['montant']:.2f} €" if v['montant'] > 0 else "-",
+                "Client": v["client"],
                 "Ménage": is_checked
             })
         
         df_display = pd.DataFrame(rows)
+
         def style_rows(row):
-            return ['background-color: #2E8B57; color: white'] * len(row) if row["Ménage"] else [''] * len(row)
+            if row["Ménage"]:
+                return ['background-color: #2E8B57; color: white'] * len(row)
+            return [''] * len(row)
 
         edited_df = st.data_editor(
             df_display.style.apply(style_rows, axis=1),
-            use_container_width=True, hide_index=True,
-            disabled=["Date"],
-            column_config={"Date_Full": None, "Ménage": st.column_config.CheckboxColumn("Ménage ?")},
+            use_container_width=True,
+            hide_index=True,
+            disabled=["Date", "Montant", "Client"],
+            column_config={
+                "Date_Full": None,
+                "Ménage": st.column_config.CheckboxColumn("Ménage ?", default=False)
+            },
             key="unique_editor_119"
         )
 
+        # --- SAUVEGARDER LE PLANNING (MODIFIÉ POUR SUPABASE) ---
         if st.button("💾 Enregistrer le planning 119"):
-            df_month = pd.DataFrame({"Date": edited_df["Date_Full"], "Etat": edited_df["Ménage"]})
-            # On récupère tout l'historique et on met à jour
+            # 1. Charger l'existant depuis Supabase
             try:
                 df_global = pd.read_sql("menages_manuels_119", conn.engine)
+            except Exception:
+                df_global = pd.DataFrame(columns=["Date", "Etat"])
+
+            # 2. Préparer les données du mois actuel
+            df_month = pd.DataFrame({
+                "Date": edited_df["Date_Full"].astype(str),
+                "Etat": edited_df["Ménage"].astype(bool)
+            })
+
+            # 3. Fusionner : Nettoyage de l'existant sur les dates concernées
+            if not df_global.empty:
+                df_global["Date"] = df_global["Date"].astype(str)
                 df_global = df_global[~df_global["Date"].isin(df_month["Date"])]
-                df_final = pd.concat([df_global, df_month], ignore_index=True)
-            except:
-                df_final = df_month
             
+            df_final = pd.concat([df_global, df_month], ignore_index=True)
+
+            # 4. Sauvegarder dans Supabase
             df_final.to_sql("menages_manuels_119", conn.engine, if_exists="replace", index=False)
-            st.success("Enregistré !")
+            st.success("Modifications enregistrées dans Supabase pour le 119 !")
             st.rerun()
             
    
