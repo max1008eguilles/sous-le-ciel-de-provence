@@ -300,13 +300,20 @@ if check_password():
                     df_compta.to_csv(COMPTA_FILE, index=False)
                     st.rerun()
 
-    # --- PAGE RÉSERVATIONS ---
+   # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
         st.title("📅 Gestion & Envois")
-        if not os.path.exists(RESA_FILE) or os.path.getsize(RESA_FILE) == 0:
+        
+        # S'assurer que le DataFrame global n'est pas None et nettoyer les valeurs manquantes
+        if df_resa is None or df_resa.empty:
             df_resa = pd.DataFrame(columns=["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Montant", "Numéro tel", "Mail", "Code Résidence", "Code Studio", "Code Autre", "Guide Envoyé"])
         else:
-            df_resa = pd.read_csv(RESA_FILE, dtype=str).fillna("")
+            df_resa = df_resa.fillna("").astype(str)
+
+        # Conversion des dates en chaînes de caractères pour les filtres textuels
+        df_resa["Date Arrivée"] = df_resa["Date Arrivée"].astype(str)
+        df_resa["Date Départ"] = df_resa["Date Départ"].astype(str)
+
         date_paris = (datetime.utcnow() + timedelta(hours=2)).strftime("%Y-%m-%d")
         st.subheader("🚀 Arrivées du jour")
         df_jour = df_resa[df_resa["Date Arrivée"] == date_paris].copy()
@@ -316,37 +323,54 @@ if check_password():
             client_sel = st.selectbox("Sélectionner le client :", df_jour['Prénom_Nom'].unique())
             if st.button("📤 Envoyer le guide au client sélectionné"):
                 st.success("Guide envoyé !")
+        
         st.divider()
         st.subheader("📝 Toutes les réservations")
         df_display = df_resa.sort_values(by="Date Arrivée", ascending=False).copy()
+        
         def add_blue_dot(val):
             if val and str(val) <= date_paris and str(val) != "": return f"🔵 {val}"
             return val
+        
         df_display["Date Arrivée"] = df_display["Date Arrivée"].apply(add_blue_dot)
+        
         empty_row = pd.DataFrame([{col: "" for col in df_display.columns}])
         empty_row["Guide Envoyé"] = "Non"
         df_with_add = pd.concat([empty_row, df_display], ignore_index=True)
+        
         column_config = {"Guide Envoyé": st.column_config.SelectboxColumn(options=["Non", "Oui"], default="Non")}
         edited_resa = st.data_editor(df_with_add, num_rows="dynamic", use_container_width=True, key="editor_final_stable", column_config=column_config)
+        
         if st.button("💾 SAUVEGARDER LES MODIFICATIONS"):
             df_to_save = edited_resa[edited_resa['Prénom_Nom'] != ""].copy()
             df_to_save["Date Arrivée"] = df_to_save["Date Arrivée"].str.replace("🔵 ", "", regex=False)
+            
             def get_code_autre(row):
                 res = str(row.get('Code Résidence', ''))
                 return res[:-1] if len(res) > 1 else row.get('Code Autre', '')
+            
             df_to_save['Code Autre'] = df_to_save.apply(get_code_autre, axis=1)
             df_to_save = df_to_save.sort_values(by="Date Arrivée", ascending=False)
-            df_to_save.to_csv(RESA_FILE, index=False)
-            st.success("Sauvegarde réussie !")
+            
+            # REMPLACEMENT DU TO_CSV PAR L'ÉCRITURE SQL SUPABASE
+            df_to_save.to_sql("reservations", conn.engine, if_exists="replace", index=False)
+            
+            st.success("Sauvegarde réussie dans Supabase !")
             st.rerun()
+            
         st.divider()
         st.subheader("🗓️ Vue Calendrier")
         calendar_events = []
         for _, row in df_resa.iterrows():
             if row['Date Arrivée'] and row['Date Départ']:
-                calendar_events.append({"title": f"{row['Prénom_Nom']} ({row['Appartement']})", "start": row['Date Arrivée'], "end": row['Date Départ'], "color": "#FF4B4B" if "14" in str(row['Appartement']) else "#1C83E1"})
+                calendar_events.append({
+                    "title": f"{row['Prénom_Nom']} ({row['Appartement']})", 
+                    "start": row['Date Arrivée'], 
+                    "end": row['Date Départ'], 
+                    "color": "#FF4B4B" if "14" in str(row['Appartement']) else "#1C83E1"
+                })
         calendar(events=calendar_events, options={"initialView": "dayGridMonth"}, key="cal_final")
-
+        
     # --- PAGE DÉTAIL 014 ---
     elif page == "Détail 014":
         st.title("🏠 Détail Studio 014")
