@@ -719,10 +719,17 @@ if check_password():
         # --- SAUVEGARDER LE PLANNING (MODIFIÉ POUR SUPABASE) ---
         if st.button("💾 Enregistrer le planning 119"):
             # 1. Charger l'existant depuis Supabase
-            try:
-                df_global = pd.read_sql("menages_manuels_119", conn.engine)
-            except Exception:
-                df_global = pd.DataFrame(columns=["Date", "Etat"])
+            # --- LECTURE CORRECTE DE L'HISTORIQUE ---
+        dict_menages = {}
+        has_history = False
+        try:
+            df_m_save = pd.read_sql("menages_manuels_119", conn.engine)
+            # On force le format YYYY-MM-DD ici
+            df_m_save["Date"] = pd.to_datetime(df_m_save["Date"]).dt.strftime('%Y-%m-%d')
+            dict_menages = dict(zip(df_m_save["Date"], df_m_save["Etat"].astype(bool)))
+            has_history = True
+        except Exception:
+            pass
 
             # 2. Préparer les données du mois actuel
             df_month = pd.DataFrame({
