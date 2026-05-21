@@ -555,6 +555,12 @@ if check_password():
     # --- PAGE DÉTAIL 119 ---
     elif page == "Détail 119":
         st.title("🏠 Détail Studio 119")
+
+        # CHARGEMENT DES OBJECTIFS DEPUIS SUPABASE (Sécurité NameError)
+    try:
+        df_obj_all = pd.read_sql("config_objectifs", conn.engine)
+    except Exception:
+        df_obj_all = pd.DataFrame(columns=["Année", "Mois", "Objectif"])
         
         # --- LOGIQUE MÉNAGES SPÉCIFIQUE 119 (MODIFIÉE POUR SUPABASE) ---
         dict_menages = {}
