@@ -717,11 +717,11 @@ if check_password():
         )
 
         # --- SAUVEGARDER LE PLANNING (MODIFIÉ POUR SUPABASE) ---
-        if st.button("💾 Enregistrer le planning 119"):
+            if st.button("💾 Enregistrer le planning 119"):
             # 1. Charger l'existant depuis Supabase
             # --- LECTURE CORRECTE DE L'HISTORIQUE ---
-        dict_menages = {}
-        has_history = False
+            dict_menages = {}
+            has_history = False
         try:
             df_m_save = pd.read_sql("menages_manuels_119", conn.engine)
             # On force le format YYYY-MM-DD ici
