@@ -764,22 +764,22 @@ if check_password():
         except: pass
 
         # --- CHARGEMENT DES AUTRES DONNÉES DEPUIS SUPABASE ---
-        # Statut des paiements
         try:
             df_p = pd.read_sql("statut_paiements_menages", conn.engine)
             dict_paye = dict(zip(df_p["Clef"], df_p["Payé"].astype(bool)))
         except:
             dict_paye = {}
 
-        # Notifications envoyées
         try:
             list_envoyes = pd.read_sql("menages_envoyes", conn.engine)["Clef"].tolist()
         except:
             list_envoyes = []
 
+        # Ensemble pour suivre les clés déjà traitées
+        clés_traitées = set()
         all_data = []
         
-        # Extraction automatique et filtrage dynamique par l'état des pages Détails
+        # 1. PREMIÈRE SOURCE : Extraction via les réservations (df_resa)
         if df_resa is not None and not df_resa.empty:
             temp_menages = df_resa.copy()
             temp_menages = temp_menages.fillna("")
@@ -792,21 +792,19 @@ if check_password():
                 if nom_client != "" and d_depart_str != "":
                     if "14" in appt_raw:
                         appt_name = "Studio 014"
-                        # Vérification de l'état forcé ou de la présence de la réservation
                         est_conserve = dict_details_014.get(d_depart_str, False)
                     elif "119" in appt_raw:
                         appt_name = "Studio 119"
-                        # Vérification de l'état forcé ou de la présence de la réservation
                         est_conserve = dict_details_119.get(d_depart_str, False)
                     else:
                         appt_name = f"Studio {appt_raw}"
                         est_conserve = True
                         
-                    # CRUCIAL : Si non coché ou désactivé dans la page détail, on passe
                     if not est_conserve:
                         continue
                         
                     clef = f"{appt_name}_{d_depart_str}"
+                    clés_traitées.add((d_depart_str, appt_name))
                     
                     try:
                         d_obj = pd.to_datetime(d_depart_str).date()
@@ -822,7 +820,36 @@ if check_password():
                     except: 
                         continue
 
-        # Récupération des frais de courses depuis Supabase
+        # 2. DEUXIÈME SOURCE : Forcer l'ajout des dates cochées manuellement absentes de df_resa
+        # Pour le Studio 014
+        for d_str, etat in dict_details_014.items():
+            if etat and (d_str, "Studio 014") not in clés_traitées:
+                clef = f"Studio 014_{d_str}"
+                try:
+                    d_obj = pd.to_datetime(d_str).date()
+                    if d_obj.year == 2026:
+                        all_data.append({
+                            "Clef": clef, "Date": d_obj, "Appartement": "Studio 014",
+                            "Statut": "Passé" if d_obj < date.today() else "À venir",
+                            "Payé": dict_paye.get(clef, False), "Deja_Envoye": clef in list_envoyes
+                        })
+                except: continue
+
+        # Pour le Studio 119
+        for d_str, etat in dict_details_119.items():
+            if etat and (d_str, "Studio 119") not in clés_traitées:
+                clef = f"Studio 119_{d_str}"
+                try:
+                    d_obj = pd.to_datetime(d_str).date()
+                    if d_obj.year == 2026:
+                        all_data.append({
+                            "Clef": clef, "Date": d_obj, "Appartement": "Studio 119",
+                            "Statut": "Passé" if d_obj < date.today() else "À venir",
+                            "Payé": dict_paye.get(clef, False), "Deja_Envoye": clef in list_envoyes
+                        })
+                except: continue
+
+        # --- CALCULS ET MÉTRIQUES ---
         try:
             montant_courses = pd.read_sql("frais_courses", conn.engine)["montant"].iloc[0]
         except:
@@ -838,7 +865,6 @@ if check_password():
             df_du = pd.DataFrame()
             total_prestations = 0.0 ; total_global_du = montant_courses
 
-        # 2. Métriques Financières
         m1, m2, m3 = st.columns(3)
         m1.metric("Ménages à régler", len(df_du))
         m2.metric("Total Prestations", f"{total_prestations:.2f} €")
@@ -851,7 +877,7 @@ if check_password():
                 df_courses.to_sql("frais_courses", conn.engine, if_exists="replace", index=False)
                 st.rerun()
 
-        # 3. BLOC CODES D'ACCÈS
+        # --- CODES D'ACCÈS ---
         st.divider()
         st.subheader("🔑 Codes d'Accès")
         
@@ -874,7 +900,7 @@ if check_password():
         c_code2.success(f"**🚪 STUDIO 014**\n\n# 178459")
         c_code3.warning(f"**🔑 STUDIO 119** (le {date_119})\n\n# {code_119_val}")
 
-        # --- 4. BOUTON WHATSAPP ---
+        # --- BOUTON WHATSAPP ---
         st.write("")
         menages_futurs = df_total[df_total["Statut"] == "À venir"].sort_values(by="Date")
         
@@ -912,7 +938,7 @@ if check_password():
                     st.success("Planning actualisé !")
                     st.rerun()
 
-        # 5. HISTORIQUE VISUEL
+        # --- HISTORIQUE VISUEL ---
         st.divider()
         st.subheader("📋 Historique des passages")
 
