@@ -10,6 +10,7 @@ from streamlit_calendar import calendar
 # --- INITIALISATION DE LA CONNEXION SQL ---
 conn = st.connection("postgresql", type="sql")
 
+
 # --- CONFIG DE LA PAGE ---
 st.set_page_config(page_title="RNM IMMO - Expert", layout="wide")
 
