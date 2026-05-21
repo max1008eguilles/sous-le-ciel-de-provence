@@ -339,7 +339,7 @@ if check_password():
         
         empty_row = pd.DataFrame([{col: "" for col in df_display.columns}])
         empty_row["Guide Envoyé"] = "Non"
-        empty_row["Plateforme"] = "Airbnb"  # Option par défaut pour la nouvelle ligne
+        empty_row["Plateforme"] = ""  # Option par défaut pour la nouvelle ligne
         df_with_add = pd.concat([empty_row, df_display], ignore_index=True)
         
         # Configuration des listes déroulantes (Guide Envoyé ET Plateforme)
