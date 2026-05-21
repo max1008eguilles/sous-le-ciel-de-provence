@@ -556,24 +556,22 @@ if check_password():
     elif page == "Détail 119":
         st.title("🏠 Détail Studio 119")
         
-        # --- LOGIQUE MÉNAGES SPÉCIFIQUE 119 ---
-        MENAGE_119_FILE = "menages_manuels_119.csv"
+        # --- LOGIQUE MÉNAGES SPÉCIFIQUE 119 (MODIFIÉE POUR SUPABASE) ---
         dict_menages = {}
         has_history = False
 
-        if os.path.exists(MENAGE_119_FILE):
-            try:
-                df_m_save = pd.read_csv(MENAGE_119_FILE)
-                if "Etat" in df_m_save.columns:
-                    dict_menages = dict(zip(df_m_save["Date"], df_m_save["Etat"].astype(bool)))
-                    has_history = True
-            except Exception:
-                pass 
+        # Lecture de l'historique depuis Supabase
+        try:
+            df_m_save = pd.read_sql("menages_manuels_119", conn.engine)
+            if "Etat" in df_m_save.columns:
+                dict_menages = dict(zip(df_m_save["Date"].astype(str), df_m_save["Etat"].astype(bool)))
+                has_history = True
+        except Exception:
+            pass 
 
         # --- CONFIGURATION OBJECTIFS ---
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
         df_obj_year = df_obj_all[df_obj_all["Année"] == sel_year].copy()
-        # On peut adapter l'objectif par défaut si besoin (ex: 1350€ pour le 119)
         if df_obj_year.empty:
             df_obj_year = pd.DataFrame({"Année": [sel_year]*12, "Mois": mois_noms, "Objectif": [1350.0]*12})
         
@@ -588,7 +586,6 @@ if check_password():
         st.divider()
 
         # --- CALCUL DES DONNÉES (MOIS & ANNÉE CUMULÉE) ---
-        # Filtre spécifique pour le 119
         resa_119 = df_resa[df_resa["Appartement"].isin(["119", 119])].copy()
         
         # 1. Calcul Annuel Cumulé
@@ -599,7 +596,9 @@ if check_password():
         
         for _, r in resa_119.iterrows():
             if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
-                d_arr, d_dep = r["Date Arrivée"], r["Date Départ"]
+                d_arr = pd.to_datetime(r["Date Arrivée"]).date() if not isinstance(r["Date Arrivée"], date) else r["Date Arrivée"]
+                d_dep = pd.to_datetime(r["Date Départ"]).date() if not isinstance(r["Date Départ"], date) else r["Date Départ"]
+                
                 delta = (d_dep - d_arr).days
                 if delta > 0:
                     prix_par_nuit = float(r["Montant"]) / delta
@@ -619,7 +618,9 @@ if check_password():
         
         for _, r in resa_119.iterrows():
             if pd.notnull(r["Date Arrivée"]) and pd.notnull(r["Date Départ"]):
-                d_arr, d_dep = r["Date Arrivée"], r["Date Départ"]
+                d_arr = pd.to_datetime(r["Date Arrivée"]).date() if not isinstance(r["Date Arrivée"], date) else r["Date Arrivée"]
+                d_dep = pd.to_datetime(r["Date Départ"]).date() if not isinstance(r["Date Départ"], date) else r["Date Départ"]
+                
                 delta = (d_dep - d_arr).days
                 if delta > 0:
                     prix_par_nuit = float(r["Montant"]) / delta
@@ -692,27 +693,32 @@ if check_password():
             key="unique_editor_119"
         )
 
+        # --- SAUVEGARDER LE PLANNING (MODIFIÉ POUR SUPABASE) ---
         if st.button("💾 Enregistrer le planning 119"):
-            # 1. Charger l'existant
-            if os.path.exists(MENAGE_119_FILE):
-                df_global = pd.read_csv(MENAGE_119_FILE)
-            else:
+            # 1. Charger l'existant depuis Supabase
+            try:
+                df_global = pd.read_sql("menages_manuels_119", conn.engine)
+            except Exception:
                 df_global = pd.DataFrame(columns=["Date", "Etat"])
 
             # 2. Préparer les données du mois actuel
             df_month = pd.DataFrame({
-                "Date": edited_df["Date_Full"],
-                "Etat": edited_df["Ménage"]
+                "Date": edited_df["Date_Full"].astype(str),
+                "Etat": edited_df["Ménage"].astype(bool)
             })
 
-            # 3. Fusionner
-            df_global = df_global[~df_global["Date"].isin(df_month["Date"])]
+            # 3. Fusionner : Nettoyage de l'existant sur les dates concernées
+            if not df_global.empty:
+                df_global["Date"] = df_global["Date"].astype(str)
+                df_global = df_global[~df_global["Date"].isin(df_month["Date"])]
+            
             df_final = pd.concat([df_global, df_month], ignore_index=True)
 
-            # 4. Sauvegarder
-            df_final.to_csv(MENAGE_119_FILE, index=False)
-            st.success("Modifications enregistrées pour le 119 (Historique conservé) !")
+            # 4. Sauvegarder dans Supabase
+            df_final.to_sql("menages_manuels_119", conn.engine, if_exists="replace", index=False)
+            st.success("Modifications enregistrées dans Supabase pour le 119 !")
             st.rerun()
+            
    
     # MENAGESSS
    # --- PAGE RÉCAPITULATIF COMPLET MÉNAGES 2026 ---
