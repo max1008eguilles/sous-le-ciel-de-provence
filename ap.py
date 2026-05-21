@@ -569,7 +569,7 @@ if check_password():
         except Exception:
             pass 
 
-        # --- CONFIGURATION OBJECTIFS ---
+       # --- CONFIGURATION OBJECTIFS ---
         mois_noms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
         df_obj_year = df_obj_all[df_obj_all["Année"] == sel_year].copy()
         if df_obj_year.empty:
@@ -580,10 +580,14 @@ if check_password():
                 column_config={"Année": None, "Mois": st.column_config.TextColumn(disabled=True), "Objectif": st.column_config.NumberColumn("Objectif (€)", format="%.2f €")})
             if st.button("💾 Sauvegarder Objectifs 119"):
                 df_obj_others = df_obj_all[df_obj_all["Année"] != sel_year]
-                pd.concat([df_obj_others, edited_obj], ignore_index=True).to_csv(OBJ_FILE, index=False)
+                
+                # Fusionner les anciennes années avec les modifications de l'année en cours
+                df_obj_final = pd.concat([df_obj_others, edited_obj], ignore_index=True)
+                
+                # Sauvegarder dans Supabase au lieu du fichier CSV local
+                df_obj_final.to_sql("config_objectifs", conn.engine, if_exists="replace", index=False)
+                st.success("Objectifs mis à jour dans Supabase !")
                 st.rerun()
-        
-        st.divider()
 
         # --- CALCUL DES DONNÉES (MOIS & ANNÉE CUMULÉE) ---
         resa_119 = df_resa[df_resa["Appartement"].isin(["119", 119])].copy()
