@@ -790,12 +790,13 @@ if check_password():
                 appt_raw = str(row.get("Appartement", "")).strip()
                 
                 if nom_client != "" and d_depart_str != "":
+                    # MODIFICATION APPLIQUÉE ICI : .get(..., True) par défaut
                     if "14" in appt_raw:
                         appt_name = "Studio 014"
-                        est_conserve = dict_details_014.get(d_depart_str, False)
+                        est_conserve = dict_details_014.get(d_depart_str, True)
                     elif "119" in appt_raw:
                         appt_name = "Studio 119"
-                        est_conserve = dict_details_119.get(d_depart_str, False)
+                        est_conserve = dict_details_119.get(d_depart_str, True)
                     else:
                         appt_name = f"Studio {appt_raw}"
                         est_conserve = True
@@ -821,7 +822,6 @@ if check_password():
                         continue
 
         # 2. DEUXIÈME SOURCE : Forcer l'ajout des dates cochées manuellement absentes de df_resa
-        # Pour le Studio 014
         for d_str, etat in dict_details_014.items():
             if etat and (d_str, "Studio 014") not in clés_traitées:
                 clef = f"Studio 014_{d_str}"
@@ -835,7 +835,6 @@ if check_password():
                         })
                 except: continue
 
-        # Pour le Studio 119
         for d_str, etat in dict_details_119.items():
             if etat and (d_str, "Studio 119") not in clés_traitées:
                 clef = f"Studio 119_{d_str}"
@@ -969,7 +968,6 @@ if check_password():
                 df_save_p.to_sql("statut_paiements_menages", conn.engine, if_exists="replace", index=False)
                 st.success("Enregistré dans Supabase !")
                 st.rerun()
-
     
         #RO2026
     elif page == "RO 2026":
