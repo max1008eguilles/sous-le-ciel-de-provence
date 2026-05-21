@@ -792,17 +792,17 @@ if check_password():
                 if nom_client != "" and d_depart_str != "":
                     if "14" in appt_raw:
                         appt_name = "Studio 014"
-                        # On vérifie si la date a été décochée manuellement dans la page Détail 014
-                        est_conserve = dict_details_014.get(d_depart_str, True)
+                        # Vérification de l'état forcé ou de la présence de la réservation
+                        est_conserve = dict_details_014.get(d_depart_str, False)
                     elif "119" in appt_raw:
                         appt_name = "Studio 119"
-                        # On vérifie si la date a été décochée manuellement dans la page Détail 119
-                        est_conserve = dict_details_119.get(d_depart_str, True)
+                        # Vérification de l'état forcé ou de la présence de la réservation
+                        est_conserve = dict_details_119.get(d_depart_str, False)
                     else:
                         appt_name = f"Studio {appt_raw}"
                         est_conserve = True
                         
-                    # CRUCIAL : Si décoché dans la page détail, on ne génère pas de ménage à faire
+                    # CRUCIAL : Si non coché ou désactivé dans la page détail, on passe
                     if not est_conserve:
                         continue
                         
