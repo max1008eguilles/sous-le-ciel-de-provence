@@ -726,46 +726,62 @@ if check_password():
         st.title("🧹 Suivi Annuel des Ménages 2026")
         
         PRIX_MENAGE_UNITAIRE = 20.0 
-        PAIEMENTS_FILE = "statut_paiements_menages.csv"
-        COURSES_FILE = "frais_courses.csv"
-        ENVOYES_FILE = "menages_envoyes.csv" # Fichier pour suivre les notifications
 
-        # 1. Chargement des données de paiement et d'envoi
-        if os.path.exists(PAIEMENTS_FILE):
-            try:
-                df_p = pd.read_csv(PAIEMENTS_FILE)
-                dict_paye = dict(zip(df_p["Clef"], df_p["Payé"].astype(bool)))
-            except: dict_paye = {}
-        else: dict_paye = {}
+        # --- RECUPERATION DES ETATS MANUELS DEPUIS SUPABASE (014 & 119) ---
+        dict_details_014 = {}
+        dict_details_119 = {}
+        try:
+            df_m014 = pd.read_sql("menages_manuels_014", conn.engine)
+            dict_details_014 = dict(zip(df_m014["Date"].astype(str), df_m014["Etat"].astype(bool)))
+        except: pass
 
-        if os.path.exists(ENVOYES_FILE):
-            try: list_envoyes = pd.read_csv(ENVOYES_FILE)["Clef"].tolist()
-            except: list_envoyes = []
-        else: list_envoyes = []
+        try:
+            df_m119 = pd.read_sql("menages_manuels_119", conn.engine)
+            dict_details_119 = dict(zip(df_m119["Date"].astype(str), df_m119["Etat"].astype(bool)))
+        except: pass
+
+        # --- CHARGEMENT DES AUTRES DONNÉES DEPUIS SUPABASE ---
+        # Statut des paiements
+        try:
+            df_p = pd.read_sql("statut_paiements_menages", conn.engine)
+            dict_paye = dict(zip(df_p["Clef"], df_p["Payé"].astype(bool)))
+        except:
+            dict_paye = {}
+
+        # Notifications envoyées
+        try:
+            list_envoyes = pd.read_sql("menages_envoyes", conn.engine)["Clef"].tolist()
+        except:
+            list_envoyes = []
 
         all_data = []
         
-        # MODIFICATION UNIQUE : Extraction automatique des ménages depuis le DataFrame global Supabase (df_resa)
+        # Extraction automatique et filtrage dynamique par l'état des pages Détails
         if df_resa is not None and not df_resa.empty:
-            # On s'assure que les colonnes nécessaires existent et sont valides
             temp_menages = df_resa.copy()
             temp_menages = temp_menages.fillna("")
             
-            # Un ménage doit être fait à chaque "Date Départ" d'une réservation valide
             for _, row in temp_menages.iterrows():
                 nom_client = str(row.get("Prénom_Nom", "")).strip()
                 d_depart_str = str(row.get("Date Départ", "")).strip()
                 appt_raw = str(row.get("Appartement", "")).strip()
                 
-                # Validation : il faut un client et une date de départ pour générer le ménage
                 if nom_client != "" and d_depart_str != "":
-                    # Uniformisation du nom de l'appartement pour correspondre à tes affichages habituels
                     if "14" in appt_raw:
                         appt_name = "Studio 014"
+                        # On vérifie si la date a été décochée manuellement dans la page Détail 014
+                        est_conserve = dict_details_014.get(d_depart_str, True)
                     elif "119" in appt_raw:
                         appt_name = "Studio 119"
+                        # On vérifie si la date a été décochée manuellement dans la page Détail 119
+                        est_conserve = dict_details_119.get(d_depart_str, True)
                     else:
                         appt_name = f"Studio {appt_raw}"
+                        est_conserve = True
+                        
+                    # CRUCIAL : Si décoché dans la page détail, on ne génère pas de ménage à faire
+                    if not est_conserve:
+                        continue
                         
                     clef = f"{appt_name}_{d_depart_str}"
                     
@@ -783,11 +799,11 @@ if check_password():
                     except: 
                         continue
 
-        # 2. Métriques Financières
-        if os.path.exists(COURSES_FILE):
-            try: montant_courses = pd.read_csv(COURSES_FILE)["montant"].iloc[0]
-            except: montant_courses = 0.0
-        else: montant_courses = 0.0
+        # Récupération des frais de courses depuis Supabase
+        try:
+            montant_courses = pd.read_sql("frais_courses", conn.engine)["montant"].iloc[0]
+        except:
+            montant_courses = 0.0
 
         if all_data:
             df_total = pd.DataFrame(all_data).drop_duplicates(subset=['Clef']).sort_values(by="Date", ascending=False)
@@ -799,6 +815,7 @@ if check_password():
             df_du = pd.DataFrame()
             total_prestations = 0.0 ; total_global_du = montant_courses
 
+        # 2. Métriques Financières
         m1, m2, m3 = st.columns(3)
         m1.metric("Ménages à régler", len(df_du))
         m2.metric("Total Prestations", f"{total_prestations:.2f} €")
@@ -807,7 +824,8 @@ if check_password():
         with st.expander("🛒 Gérer les frais de courses"):
             new_montant = st.number_input("Cumul courses (€)", value=float(montant_courses), step=1.0)
             if st.button("Enregistrer Montant Courses"):
-                pd.DataFrame({"montant": [new_montant]}).to_csv(COURSES_FILE, index=False)
+                df_courses = pd.DataFrame({"montant": [new_montant]})
+                df_courses.to_sql("frais_courses", conn.engine, if_exists="replace", index=False)
                 st.rerun()
 
         # 3. BLOC CODES D'ACCÈS
@@ -833,7 +851,7 @@ if check_password():
         c_code2.success(f"**🚪 STUDIO 014**\n\n# 178459")
         c_code3.warning(f"**🔑 STUDIO 119** (le {date_119})\n\n# {code_119_val}")
 
-        # --- 4. BOUTON WHATSAPP AVEC DÉTECTION DES NOUVEAUTÉS ---
+        # --- 4. BOUTON WHATSAPP ---
         st.write("")
         menages_futurs = df_total[df_total["Statut"] == "À venir"].sort_values(by="Date")
         
@@ -866,11 +884,12 @@ if check_password():
                 st.link_button("📲 Envoyer Planning & Codes sur WhatsApp", whatsapp_url, use_container_width=True, type="primary")
             with col_wa2:
                 if st.button("✅ Marquer comme notifiés"):
-                    pd.DataFrame({"Clef": list(set(list_envoyes + nouvelles_clefs))}).to_csv(ENVOYES_FILE, index=False)
+                    df_envoyes = pd.DataFrame({"Clef": list(set(list_envoyes + nouvelles_clefs))})
+                    df_envoyes.to_sql("menages_envoyes", conn.engine, if_exists="replace", index=False)
                     st.success("Planning actualisé !")
                     st.rerun()
 
-        # 5. HISTORIQUE
+        # 5. HISTORIQUE VISUEL
         st.divider()
         st.subheader("📋 Historique des passages")
 
@@ -896,9 +915,13 @@ if check_password():
             if st.button("💾 Enregistrer les règlements"):
                 for _, row in edited_df.iterrows():
                     dict_paye[row["Clef"]] = row["Payé"]
-                pd.DataFrame([{"Clef": k, "Payé": v} for k, v in dict_paye.items()]).to_csv(PAIEMENTS_FILE, index=False)
-                st.success("Enregistré !")
+                
+                df_save_p = pd.DataFrame([{"Clef": k, "Payé": v} for k, v in dict_paye.items()])
+                df_save_p.to_sql("statut_paiements_menages", conn.engine, if_exists="replace", index=False)
+                st.success("Enregistré dans Supabase !")
                 st.rerun()
+
+    
         #RO2026
     elif page == "RO 2026":
         st.title("🚀 RNM IMMO - Cockpit de Pilotage 2026")
