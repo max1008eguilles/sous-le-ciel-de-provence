@@ -719,7 +719,7 @@ if check_password():
         COURSES_FILE = "frais_courses.csv"
         ENVOYES_FILE = "menages_envoyes.csv" # Fichier pour suivre les notifications
 
-        # 1. Chargement des données
+        # 1. Chargement des données de paiement et d'envoi
         if os.path.exists(PAIEMENTS_FILE):
             try:
                 df_p = pd.read_csv(PAIEMENTS_FILE)
@@ -727,34 +727,50 @@ if check_password():
             except: dict_paye = {}
         else: dict_paye = {}
 
-        # Chargement de l'historique des envois WhatsApp
         if os.path.exists(ENVOYES_FILE):
             try: list_envoyes = pd.read_csv(ENVOYES_FILE)["Clef"].tolist()
             except: list_envoyes = []
         else: list_envoyes = []
 
         all_data = []
-        sources = {"Studio 014": "menages_manuels_014.csv", "Studio 119": "menages_manuels_119.csv"}
         
-        for appt_name, file_path in sources.items():
-            if os.path.exists(file_path):
-                df_src = pd.read_csv(file_path)
-                col_etat = next((c for c in ["Etat", "Ménage ?", "Ménage"] if c in df_src.columns), None)
-                if "Date" in df_src.columns and col_etat:
-                    df_checked = df_src[df_src[col_etat] == True].copy()
-                    for _, row in df_checked.iterrows():
-                        d_str = str(row["Date"])
-                        clef = f"{appt_name}_{d_str}"
-                        try:
-                            d_obj = pd.to_datetime(d_str).date()
-                            if d_obj.year == 2026:
-                                all_data.append({
-                                    "Clef": clef, "Date": d_obj, "Appartement": appt_name,
-                                    "Statut": "Passé" if d_obj < date.today() else "À venir",
-                                    "Payé": dict_paye.get(clef, False),
-                                    "Deja_Envoye": clef in list_envoyes
-                                })
-                        except: continue
+        # MODIFICATION UNIQUE : Extraction automatique des ménages depuis le DataFrame global Supabase (df_resa)
+        if df_resa is not None and not df_resa.empty:
+            # On s'assure que les colonnes nécessaires existent et sont valides
+            temp_menages = df_resa.copy()
+            temp_menages = temp_menages.fillna("")
+            
+            # Un ménage doit être fait à chaque "Date Départ" d'une réservation valide
+            for _, row in temp_menages.iterrows():
+                nom_client = str(row.get("Prénom_Nom", "")).strip()
+                d_depart_str = str(row.get("Date Départ", "")).strip()
+                appt_raw = str(row.get("Appartement", "")).strip()
+                
+                # Validation : il faut un client et une date de départ pour générer le ménage
+                if nom_client != "" and d_depart_str != "":
+                    # Uniformisation du nom de l'appartement pour correspondre à tes affichages habituels
+                    if "14" in appt_raw:
+                        appt_name = "Studio 014"
+                    elif "119" in appt_raw:
+                        appt_name = "Studio 119"
+                    else:
+                        appt_name = f"Studio {appt_raw}"
+                        
+                    clef = f"{appt_name}_{d_depart_str}"
+                    
+                    try:
+                        d_obj = pd.to_datetime(d_depart_str).date()
+                        if d_obj.year == 2026:
+                            all_data.append({
+                                "Clef": clef, 
+                                "Date": d_obj, 
+                                "Appartement": appt_name,
+                                "Statut": "Passé" if d_obj < date.today() else "À venir",
+                                "Payé": dict_paye.get(clef, False),
+                                "Deja_Envoye": clef in list_envoyes
+                            })
+                    except: 
+                        continue
 
         # 2. Métriques Financières
         if os.path.exists(COURSES_FILE):
@@ -769,6 +785,7 @@ if check_password():
             total_global_du = total_prestations + montant_courses
         else:
             df_total = pd.DataFrame(columns=["Clef", "Date", "Appartement", "Statut", "Payé", "Deja_Envoye"])
+            df_du = pd.DataFrame()
             total_prestations = 0.0 ; total_global_du = montant_courses
 
         m1, m2, m3 = st.columns(3)
@@ -814,7 +831,6 @@ if check_password():
             nouvelles_clefs = []
             
             for _, m in menages_futurs.iterrows():
-                # On ajoute un marqueur visuel si c'est la première fois qu'on l'envoie
                 prefixe = "🆕 " if not m["Deja_Envoye"] else "- "
                 texte_menages += f"{prefixe}{m['Appartement']} le {m['Date'].strftime('%d/%m')}\n"
                 nouvelles_clefs.append(m["Clef"])
@@ -839,7 +855,6 @@ if check_password():
                 st.link_button("📲 Envoyer Planning & Codes sur WhatsApp", whatsapp_url, use_container_width=True, type="primary")
             with col_wa2:
                 if st.button("✅ Marquer comme notifiés"):
-                    # On enregistre toutes les clefs actuelles comme étant "déjà envoyées"
                     pd.DataFrame({"Clef": list(set(list_envoyes + nouvelles_clefs))}).to_csv(ENVOYES_FILE, index=False)
                     st.success("Planning actualisé !")
                     st.rerun()
@@ -847,7 +862,6 @@ if check_password():
         # 5. HISTORIQUE
         st.divider()
         st.subheader("📋 Historique des passages")
-        # ... (reste du code identique pour l'historique)
 
         if not df_total.empty:
             df_display = df_total.copy()
@@ -874,7 +888,6 @@ if check_password():
                 pd.DataFrame([{"Clef": k, "Payé": v} for k, v in dict_paye.items()]).to_csv(PAIEMENTS_FILE, index=False)
                 st.success("Enregistré !")
                 st.rerun()
-
         #RO2026
     elif page == "RO 2026":
         st.title("🚀 RNM IMMO - Cockpit de Pilotage 2026")
