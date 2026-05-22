@@ -1105,7 +1105,7 @@ if check_password():
     elif page == "Patrimoine Maxence":
         st.title("💰 Patrimoine Maxence")
 
-        # 1. Initialisation des données dans la session si elles n'existent pas
+        # 1. Initialisation
         if 'df_bourse' not in st.session_state:
             st.session_state.df_bourse = pd.DataFrame({
                 "Actif": ["PEA - Bourso Bank", "CTO - Trade Republic", "Wallet Crypto"],
@@ -1113,36 +1113,31 @@ if check_password():
                 "Montant Investi": [11331.85, 9861.83, 533.76],
             })
 
-        st.subheader("📈 Modification directe des actifs")
+        st.subheader("📈 Gestion de vos actifs")
         
-        # 2. Le tableau est modifiable directement. 
-        # On stocke les modifs dans 'st.session_state.df_bourse' via la 'key'
-        edited_df = st.data_editor(
-            st.session_state.df_bourse,
-            key="editor_bourse",
-            use_container_width=True,
-            num_rows="dynamic"
-        )
-
-        # 3. Calcul automatique : dès que tu changes une cellule, 
-        # edited_df reçoit la nouvelle valeur, on calcule la variation
-        edited_df["Variation (%)"] = edited_df.apply(
+        # 2. On calcule la variation avant l'affichage
+        df_to_edit = st.session_state.df_bourse.copy()
+        df_to_edit["Variation (%)"] = df_to_edit.apply(
             lambda row: ((row["Prix Actuel"] / row["Montant Investi"]) - 1) if row["Montant Investi"] > 0 else 0.0, 
             axis=1
         )
 
-        # 4. Affichage du résultat final formaté
-        st.subheader("Détail des performances (Temps réel)")
-        st.dataframe(
-            edited_df.style.format({
-                "Prix Actuel": "{:,.2f} €",
-                "Montant Investi": "{:,.2f} €",
-                "Variation (%)": "{:+.2%}"
-            }),
-            use_container_width=True
+        # 3. Éditeur unique et formaté
+        # On utilise column_config pour formater l'affichage tout en gardant l'édition possible
+        edited_df = st.data_editor(
+            df_to_edit,
+            key="editor_bourse_unique",
+            use_container_width=True,
+            num_rows="dynamic",
+            column_config={
+                "Prix Actuel": st.column_config.NumberColumn(format="%.2f €"),
+                "Montant Investi": st.column_config.NumberColumn(format="%.2f €"),
+                "Variation (%)": st.column_config.NumberColumn(format="%.2f %%"),
+            }
         )
 
-        # Optionnel : bouton pour forcer la sauvegarde en base/CSV
-        if st.button("💾 Enregistrer les changements"):
-            st.session_state.df_bourse = edited_df
-            st.success("Données sauvegardées en session !")
+        # 4. Sauvegarde automatique en session quand tu modifies
+        if st.button("💾 Enregistrer les modifications"):
+            st.session_state.df_bourse = edited_df.drop(columns=["Variation (%)"])
+            st.success("Modifications enregistrées !")
+            st.rerun()
