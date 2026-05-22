@@ -125,15 +125,27 @@ if check_password():
     solde_cash_physique = get_solde("Cash")
     total_treso_dynamique = solde_cic + solde_cash_physique
 
+
     # --- SIDEBAR ---
     with st.sidebar:
-        st.write(f"👤 **Connecté en tant que : {st.session_state.get('user_authenticated', 'Maxence')}**")
+        user_name = st.session_state.get('user_authenticated', 'Maxence')
+        st.write(f"👤 **Connecté en tant que : {user_name}**")
+        
         if st.button("Se déconnecter"):
             st.session_state["password_correct"] = False
             st.rerun()
+            
         st.divider()
         st.title("📂 Navigation")
-        page = st.radio("Aller vers :", ["RNM IMMO", "COMPTA", "Réservations", "RO 2026", "Détail 014", "Détail 119", "Ménages"])
+        
+        # Liste de base
+        pages = ["RNM IMMO", "COMPTA", "Réservations", "RO 2026", "Détail 014", "Détail 119", "Ménages"]
+        
+        # Ajout conditionnel de la page Patrimoine (Vérifie bien que ton user est "Maxence")
+        if user_name == "Maxence":
+            pages.append("Patrimoine Maxence")
+            
+        page = st.radio("Aller vers :", pages)
         
         if page in ["Détail 014", "Détail 119"]:
             st.divider()
