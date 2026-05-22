@@ -1123,7 +1123,7 @@ if check_password():
         total_actuel = df_display["Prix Actuel"].sum()
         
         # Calcul de la répartition (% du total)
-        df_display["% Total"] = df_display["Prix Actuel"] / total_actuel if total_actuel > 0 else 0.0
+        df_display["% Total"] = df_display["Prix Actuel"] / total_actuel * 100 if total_actuel > 0 else 0.0
         
         # Calcul de la variation
         df_display["Variation (%)"] = df_display.apply(
