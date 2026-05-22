@@ -313,19 +313,33 @@ if check_password():
             if "Plateforme" not in df_resa.columns:
                 df_resa["Plateforme"] = ""
 
-        # Conversion des dates en chaînes de caractères pour les filtres textuels
+       # Conversion des dates en chaînes de caractères pour les filtres textuels
         df_resa["Date Arrivée"] = df_resa["Date Arrivée"].astype(str)
         df_resa["Date Départ"] = df_resa["Date Départ"].astype(str)
 
         date_paris = (datetime.utcnow() + timedelta(hours=2)).strftime("%Y-%m-%d")
-        st.subheader("🚀 Arrivées du jour")
-        df_jour = df_resa[df_resa["Date Arrivée"] == date_paris].copy()
+        st.subheader("🚀 Arrivées du jour (Appartement 014)")
+        
+        # Filtre strict : Uniquement appartement 024 et arrivée aujourd'hui
+        df_jour = df_resa[
+            (df_resa["Date Arrivée"] == date_paris) & 
+            (df_resa["Appartement"].astype(str).isin(["014", "14"]))
+        ].copy()
+
         if df_jour.empty:
-            st.info(f"Aucune arrivée prévue aujourd'hui ({date_paris}).")
+            st.info(f"Aucune arrivée 014 prévue aujourd'hui ({date_paris}).")
         else:
-            client_sel = st.selectbox("Sélectionner le client :", df_jour['Prénom_Nom'].unique())
-            if st.button("📤 Envoyer le guide au client sélectionné"):
-                st.success("Guide envoyé !")
+            client_sel = st.selectbox("Sélectionner le client 014 :", df_jour['Prénom_Nom'].unique())
+            if st.button("📤 Envoyer le guide 014"):
+                row_client = df_jour[df_jour['Prénom_Nom'] == client_sel].iloc[0]
+                import requests
+                # Remplace bien par ton URL Make réelle
+                webhook_url = "https://hook.eu2.make.com/7v3yap243qgcxbu8pc539owwgrvr32qt"
+                response = requests.post(webhook_url, json=row_client.to_dict())
+                if response.status_code == 200:
+                    st.success(f"Guide 014 envoyé à {client_sel} !")
+                else:
+                    st.error("Erreur d'envoi.")
         
         st.divider()
         st.subheader("📝 Toutes les réservations")
@@ -339,7 +353,7 @@ if check_password():
         
         empty_row = pd.DataFrame([{col: "" for col in df_display.columns}])
         empty_row["Guide Envoyé"] = "Non"
-        empty_row["Plateforme"] = ""  # Option par défaut pour la nouvelle ligne
+        empty_row["Plateforme"] = "" 
         df_with_add = pd.concat([empty_row, df_display], ignore_index=True)
         
         # Configuration des listes déroulantes (Guide Envoyé ET Plateforme)
