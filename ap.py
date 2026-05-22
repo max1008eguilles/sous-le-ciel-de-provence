@@ -331,23 +331,37 @@ if check_password():
                 payload = {"Nom": str(row['Prénom_Nom']), "Mail": str(row['Mail']), "Date_arrivée": str(row['Date Arrivée']), "Date_départ": str(row['Date Départ']), "Code_résidence": str(row['Code Résidence']), "Code_studio": str(row['Code Studio'])}
                 if requests.post(webhook_url, json=payload).status_code == 200: st.success("Guide 014 envoyé !")
 
-        # --- ARRIVÉES 119 ---
+       # --- ARRIVÉES 119 ---
         st.subheader("🚀 Arrivées du jour (Appartement 119)")
-        df_jour_119 = df_resa[(df_resa["Date Arrivée"] == date_paris) & (df_resa["Appartement"].astype(str).isin(["119", "19"]))]
+        # Filtre strict : Appartement 119 uniquement
+        df_jour_119 = df_resa[
+            (df_resa["Date Arrivée"] == date_paris) & 
+            (df_resa["Appartement"].astype(str).isin(["119", "19"]))
+        ].copy()
+
         if df_jour_119.empty:
             st.info("Aucune arrivée 119 aujourd'hui.")
         else:
-            client_sel_119 = st.selectbox("Sélectionner le client 119 :", df_jour_119['Prénom_Nom'].unique())
-            if st.button("📤 Envoyer le guide 119"):
+            # On utilise une clé différente 'client_sel_119' pour éviter les conflits
+            client_sel_119 = st.selectbox("Sélectionner le client 119 :", df_jour_119['Prénom_Nom'].unique(), key="sel_119")
+            if st.button("📤 Envoyer le guide 119", key="btn_119"):
                 row = df_jour_119[df_jour_119['Prénom_Nom'] == client_sel_119].iloc[0]
                 import requests
-                webhook_url = "https://hook.eu2.make.com/o244hxavjiwpgxgtk9bft1oyouyp759d" # <--- METS TON URL 119 ICI
-                payload = {"Nom": str(row['Prénom_Nom']), "Mail": str(row['Mail']), "Date_arrivée": str(row['Date Arrivée']), "Date_départ": str(row['Date Départ']), "Code_résidence": str(row['Code Résidence']), "Code_studio": str(row['Code Studio'])}
-                if requests.post(webhook_url, json=payload).status_code == 200: st.success("Guide 119 envoyé !")
-        
-        st.divider()
-        st.subheader("📝 Toutes les réservations")
-        df_display = df_resa.sort_values(by="Date Arrivée", ascending=False).copy()
+                # Mets bien ton NOUVEAU webhook ici
+                webhook_url = "https://hook.eu2.make.com/o244hxavjiwpgxgtk9bft1oyouyp7" 
+                payload = {
+                    "Nom": str(row['Prénom_Nom']), 
+                    "Mail": str(row['Mail']), 
+                    "Date_arrivée": str(row['Date Arrivée']), 
+                    "Date_départ": str(row['Date Départ']), 
+                    "Code_résidence": str(row['Code Résidence']), 
+                    "Code_studio": str(row['Code Studio'])
+                }
+                response = requests.post(webhook_url, json=payload)
+                if response.status_code == 200: 
+                    st.success("Guide 119 envoyé !")
+                else:
+                    st.error("Erreur d'envoi.")
         
         def add_blue_dot(val):
             if val and str(val) <= date_paris and str(val) != "": return f"🔵 {val}"
