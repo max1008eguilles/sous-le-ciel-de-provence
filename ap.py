@@ -1105,40 +1105,45 @@ if check_password():
     elif page == "Patrimoine Maxence":
         st.title("💰 Patrimoine Maxence")
 
-        # 1. Préparation des données (Vides par défaut)
-        data_bourse = {
-            "Actif": ["PEA - Bourso Bank", "CTO - Trade Republic", "Wallet Crypto"],
-            "Prix Actuel": [0.0, 0.0, 0.0],
-            "Montant Investi": [0.0, 0.0, 0.0],
-        }
-        
-        df_bourse = pd.DataFrame(data_bourse)
+        # 1. Initialisation des données (ex: depuis un CSV ou liste par défaut)
+        if 'df_bourse' not in st.session_state:
+            st.session_state.df_bourse = pd.DataFrame({
+                "Actif": ["PEA - Bourso Bank", "CTO - Trade Republic", "Wallet Crypto"],
+                "Prix Actuel": [11942.66, 12805.58, 528.10],
+                "Montant Investi": [11331.85, 9861.83, 533.76],
+            })
 
-        st.subheader("📈 Bourse")
+        st.subheader("📈 Édition Bourse")
         
-        # 2. Éditeur interactif : tu saisis les valeurs, et le tableau se met à jour
+        # 2. Éditeur modifiable en direct
+        # La variable 'edited_df' capture les changements en temps réel
         edited_df = st.data_editor(
-            df_bourse, 
-            column_config={
-                "Prix Actuel": st.column_config.NumberColumn("Prix Actuel (€)", format="%.2f"),
-                "Montant Investi": st.column_config.NumberColumn("Montant Investi (€)", format="%.2f"),
-            },
-            use_container_width=True
+            st.session_state.df_bourse,
+            use_container_width=True,
+            num_rows="dynamic"
         )
 
-        # 3. Calcul automatique de la variation en % (uniquement si Montant > 0 pour éviter division par zéro)
-        edited_df["Variation (%)"] = edited_df.apply(
-            lambda row: ((row["Prix Actuel"] / row["Montant Investi"]) - 1) if row["Montant Investi"] > 0 else 0.0, 
-            axis=1
-        )
+        # 3. Bouton pour valider et calculer
+        if st.button("💾 Valider et calculer les variations"):
+            # Appliquer le calcul sur le dataframe édité
+            edited_df["Variation (%)"] = edited_df.apply(
+                lambda row: ((row["Prix Actuel"] / row["Montant Investi"]) - 1) if row["Montant Investi"] > 0 else 0.0, 
+                axis=1
+            )
+            
+            # Sauvegarder dans session_state pour conserver les modifs
+            st.session_state.df_bourse = edited_df
+            st.success("Modifications enregistrées et calculs mis à jour !")
+            st.rerun()
 
-        # 4. Affichage du résultat final avec formatage
-        st.write("---")
-        st.dataframe(
-            edited_df.style.format({
-                "Prix Actuel": "{:,.2f} €",
-                "Montant Investi": "{:,.2f} €",
-                "Variation (%)": "{:+.2%}"
-            }),
-            use_container_width=True
-        )
+        # 4. Affichage du résultat calculé (lecture seule)
+        st.subheader("Détail des performances")
+        if "Variation (%)" in st.session_state.df_bourse.columns:
+            st.dataframe(
+                st.session_state.df_bourse.style.format({
+                    "Prix Actuel": "{:,.2f} €",
+                    "Montant Investi": "{:,.2f} €",
+                    "Variation (%)": "{:+.2%}"
+                }),
+                use_container_width=True
+            )
