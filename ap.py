@@ -1105,6 +1105,7 @@ if check_password():
     elif page == "Patrimoine Maxence":
         st.title("💰 Patrimoine Maxence")
 
+        # 1. Initialisation
         if 'df_bourse' not in st.session_state:
             st.session_state.df_bourse = pd.DataFrame({
                 "Actif": ["PEA - Bourso Bank", "CTO - Trade Republic", "Wallet Crypto"],
@@ -1114,33 +1115,38 @@ if check_password():
 
         st.subheader("📈 Gestion de vos actifs")
         
-        # 1. On travaille sur une copie
-        df_edit = st.session_state.df_bourse.copy()
-        
-        # 2. Calcul immédiat (sécurisé)
-        df_edit["Variation (%)"] = df_edit.apply(
-            lambda row: ((float(row["Prix Actuel"]) / float(row["Montant Investi"])) - 1) 
-            if float(row["Montant Investi"]) > 0 else 0.0, 
-            axis=1
-        )
-
-        # 3. Éditeur unique avec formatage intégré
-        # Cela remplace et l'éditeur et l'affichage de performance
+        # 2. On affiche le data_editor uniquement avec les colonnes modifiables
+        # On ne calcule RIEN ici pour éviter les erreurs TypeError
         edited_df = st.data_editor(
-            df_edit,
+            st.session_state.df_bourse,
             key="editor_bourse_unique",
             use_container_width=True,
             num_rows="dynamic",
             column_config={
-                "Prix Actuel": st.column_config.NumberColumn("Prix Actuel (€)", format="%.2f €"),
-                "Montant Investi": st.column_config.NumberColumn("Montant Investi (€)", format="%.2f €"),
-                "Variation (%)": st.column_config.NumberColumn("Variation (%)", format="%.2f %%"),
+                "Prix Actuel": st.column_config.NumberColumn("Prix Actuel (€)", format="%.2f"),
+                "Montant Investi": st.column_config.NumberColumn("Montant Investi (€)", format="%.2f"),
             }
         )
 
-        # 4. Enregistrement des modifs dans le session_state
+        # 3. Calcul de la variation uniquement APRES modification
+        # On crée une copie pour le calcul
+        calc_df = edited_df.copy()
+        
+        # Conversion forcée pour éviter les erreurs de type
+        calc_df["Prix Actuel"] = pd.to_numeric(calc_df["Prix Actuel"], errors='coerce').fillna(0.0)
+        calc_df["Montant Investi"] = pd.to_numeric(calc_df["Montant Investi"], errors='coerce').fillna(0.0)
+        
+        calc_df["Variation (%)"] = calc_df.apply(
+            lambda row: ((row["Prix Actuel"] / row["Montant Investi"]) - 1) if row["Montant Investi"] > 0 else 0.0, 
+            axis=1
+        )
+
+        # 4. Affichage du résultat final (le tableau calculé)
+        # On utilise st.dataframe pour l'affichage (plus stable que le style.format)
+        st.dataframe(calc_df, use_container_width=True)
+
+        # 5. Enregistrement des modifs (on sauvegarde la version éditée sans la colonne calculée)
         if st.button("💾 Enregistrer les modifications"):
-            # On retire la colonne calculée avant de sauvegarder pour ne garder que la source
-            st.session_state.df_bourse = edited_df.drop(columns=["Variation (%)"])
+            st.session_state.df_bourse = edited_df
             st.success("Modifications enregistrées !")
             st.rerun()
