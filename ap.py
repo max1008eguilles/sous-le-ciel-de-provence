@@ -1104,34 +1104,31 @@ if check_password():
     #PAGE PERSO PATRIMOINE
     elif page == "Patrimoine Maxence":
         st.title("💰 Patrimoine Maxence")
+        # ... (tes calculs de patrimoine) ...
 
-        # 1. Définition des valeurs (tu pourras plus tard les lier à ta base de données)
-        bourse_total = 25407.32
-        immobilier_total = 47312.41
-        epargne_total = 3360.64
-        autre_total = 6666.67
-        credits_en_cours = 85223.00 # Exemple de valeur
-
-        # 2. Calculs automatiques
-        patrimoine_brut = bourse_total + immobilier_total + epargne_total + autre_total
-        patrimoine_net = patrimoine_brut - credits_en_cours
-
-        # 3. Affichage des métriques en haut (Colonnes)
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Patrimoine Brut", f"{patrimoine_brut:,.2f} €")
-        col2.metric("Crédits en Cours", f"{credits_en_cours:,.2f} €")
-        col3.metric("Patrimoine Net", f"{patrimoine_net:,.2f} €")
-
-        st.divider()
-
-        # 4. Détail du Patrimoine (Tableau comme sur ta capture)
         st.subheader("Détail des actifs")
-        
-        # Exemple pour la section Bourse
+        st.write("📈 **Bourse**")
+
+        # Exemple de données avec les nouvelles colonnes
+        # Tu peux remplacer ces listes par les données réelles de ton tableau
         data_bourse = {
             "Actif": ["PEA - Bourso Bank", "CTO - Trade Republic", "Wallet Crypto"],
-            "Valeur": [11942.66, 12805.58, 528.10]
+            "Prix Actuel": [11942.66, 12805.58, 528.10],
+            "Montant Investi": [11331.85, 9861.83, 533.76],
         }
+        
         df_bourse = pd.DataFrame(data_bourse)
-        st.write("📈 **Bourse**")
-        st.table(df_bourse)
+        
+        # Calcul automatique de la variation en %
+        df_bourse["Variation (%)"] = (df_bourse["Prix Actuel"] / df_bourse["Montant Investi"]) - 1
+        
+        # Affichage avec formatage
+        # On affiche le dataframe pour qu'il soit plus propre qu'un st.table simple
+        st.dataframe(
+            df_bourse.style.format({
+                "Prix Actuel": "{:,.2f} €",
+                "Montant Investi": "{:,.2f} €",
+                "Variation (%)": "{:+.2%}"
+            }),
+            use_container_width=True
+        )
