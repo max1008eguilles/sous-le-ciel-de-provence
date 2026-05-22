@@ -313,14 +313,14 @@ if check_password():
             if "Plateforme" not in df_resa.columns:
                 df_resa["Plateforme"] = ""
 
-       # Conversion des dates en chaînes de caractères pour les filtres textuels
+     # Conversion des dates en chaînes de caractères pour les filtres textuels
         df_resa["Date Arrivée"] = df_resa["Date Arrivée"].astype(str)
         df_resa["Date Départ"] = df_resa["Date Départ"].astype(str)
 
         date_paris = (datetime.utcnow() + timedelta(hours=2)).strftime("%Y-%m-%d")
         st.subheader("🚀 Arrivées du jour (Appartement 014)")
         
-        # Filtre strict : Uniquement appartement 024 et arrivée aujourd'hui
+        # Filtre strict : Uniquement appartement 014 et arrivée aujourd'hui
         df_jour = df_resa[
             (df_resa["Date Arrivée"] == date_paris) & 
             (df_resa["Appartement"].astype(str).isin(["014", "14"]))
@@ -331,11 +331,21 @@ if check_password():
         else:
             client_sel = st.selectbox("Sélectionner le client 014 :", df_jour['Prénom_Nom'].unique())
             if st.button("📤 Envoyer le guide 014"):
-                row_client = df_jour[df_jour['Prénom_Nom'] == client_sel].iloc[0]
+                row = df_jour[df_jour['Prénom_Nom'] == client_sel].iloc[0]
                 import requests
-                # Remplace bien par ton URL Make réelle
                 webhook_url = "https://hook.eu2.make.com/7v3yap243qgcxbu8pc539owwgrvr32qt"
-                response = requests.post(webhook_url, json=row_client.to_dict())
+                
+                # Création explicite du dictionnaire pour correspondre aux variables Make
+                payload = {
+                    "Nom": str(row['Prénom_Nom']),
+                    "Mail": str(row['Mail']),
+                    "Date_arrivée": str(row['Date Arrivée']),
+                    "Date_départ": str(row['Date Départ']),
+                    "Code_résidence": str(row['Code Résidence']),
+                    "Code_studio": str(row['Code Studio'])
+                }
+                
+                response = requests.post(webhook_url, json=payload)
                 if response.status_code == 200:
                     st.success(f"Guide 014 envoyé à {client_sel} !")
                 else:
