@@ -309,47 +309,41 @@ if check_password():
             df_resa = pd.DataFrame(columns=["Date Arrivée", "Date Départ", "Appartement", "Prénom_Nom", "Plateforme", "Montant", "Numéro tel", "Mail", "Code Résidence", "Code Studio", "Code Autre", "Guide Envoyé"])
         else:
             df_resa = df_resa.fillna("").astype(str)
-            # Sécurité : si la colonne n'existe pas encore dans ta base Supabase, on la crée vide pour éviter les bugs
             if "Plateforme" not in df_resa.columns:
                 df_resa["Plateforme"] = ""
 
-     # Conversion des dates en chaînes de caractères pour les filtres textuels
+        # Conversion des dates
         df_resa["Date Arrivée"] = df_resa["Date Arrivée"].astype(str)
         df_resa["Date Départ"] = df_resa["Date Départ"].astype(str)
-
         date_paris = (datetime.utcnow() + timedelta(hours=2)).strftime("%Y-%m-%d")
-        st.subheader("🚀 Arrivées du jour (Appartement 014)")
-        
-        # Filtre strict : Uniquement appartement 014 et arrivée aujourd'hui
-        df_jour = df_resa[
-            (df_resa["Date Arrivée"] == date_paris) & 
-            (df_resa["Appartement"].astype(str).isin(["014", "14"]))
-        ].copy()
 
-        if df_jour.empty:
-            st.info(f"Aucune arrivée 014 prévue aujourd'hui ({date_paris}).")
+        # --- ARRIVÉES 014 ---
+        st.subheader("🚀 Arrivées du jour (Appartement 014)")
+        df_jour_014 = df_resa[(df_resa["Date Arrivée"] == date_paris) & (df_resa["Appartement"].astype(str).isin(["014", "14"]))]
+        if df_jour_014.empty:
+            st.info("Aucune arrivée 014 aujourd'hui.")
         else:
-            client_sel = st.selectbox("Sélectionner le client 014 :", df_jour['Prénom_Nom'].unique())
+            client_sel_014 = st.selectbox("Sélectionner le client 014 :", df_jour_014['Prénom_Nom'].unique())
             if st.button("📤 Envoyer le guide 014"):
-                row = df_jour[df_jour['Prénom_Nom'] == client_sel].iloc[0]
+                row = df_jour_014[df_jour_014['Prénom_Nom'] == client_sel_014].iloc[0]
                 import requests
                 webhook_url = "https://hook.eu2.make.com/7v3yap243qgcxbu8pc539owwgrvr32qt"
-                
-                # Création explicite du dictionnaire pour correspondre aux variables Make
-                payload = {
-                    "Nom": str(row['Prénom_Nom']),
-                    "Mail": str(row['Mail']),
-                    "Date_arrivée": str(row['Date Arrivée']),
-                    "Date_départ": str(row['Date Départ']),
-                    "Code_résidence": str(row['Code Résidence']),
-                    "Code_studio": str(row['Code Studio'])
-                }
-                
-                response = requests.post(webhook_url, json=payload)
-                if response.status_code == 200:
-                    st.success(f"Guide 014 envoyé à {client_sel} !")
-                else:
-                    st.error("Erreur d'envoi.")
+                payload = {"Nom": str(row['Prénom_Nom']), "Mail": str(row['Mail']), "Date_arrivée": str(row['Date Arrivée']), "Date_départ": str(row['Date Départ']), "Code_résidence": str(row['Code Résidence']), "Code_studio": str(row['Code Studio'])}
+                if requests.post(webhook_url, json=payload).status_code == 200: st.success("Guide 014 envoyé !")
+
+        # --- ARRIVÉES 119 ---
+        st.subheader("🚀 Arrivées du jour (Appartement 119)")
+        df_jour_119 = df_resa[(df_resa["Date Arrivée"] == date_paris) & (df_resa["Appartement"].astype(str).isin(["119", "19"]))]
+        if df_jour_119.empty:
+            st.info("Aucune arrivée 119 aujourd'hui.")
+        else:
+            client_sel_119 = st.selectbox("Sélectionner le client 119 :", df_jour_119['Prénom_Nom'].unique())
+            if st.button("📤 Envoyer le guide 119"):
+                row = df_jour_119[df_jour_119['Prénom_Nom'] == client_sel_119].iloc[0]
+                import requests
+                webhook_url = "https://hook.eu2.make.com/TON_WEBHOOK_119_ICI" # <--- METS TON URL 119 ICI
+                payload = {"Nom": str(row['Prénom_Nom']), "Mail": str(row['Mail']), "Date_arrivée": str(row['Date Arrivée']), "Date_départ": str(row['Date Départ']), "Code_résidence": str(row['Code Résidence']), "Code_studio": str(row['Code Studio'])}
+                if requests.post(webhook_url, json=payload).status_code == 200: st.success("Guide 119 envoyé !")
         
         st.divider()
         st.subheader("📝 Toutes les réservations")
@@ -360,13 +354,11 @@ if check_password():
             return val
         
         df_display["Date Arrivée"] = df_display["Date Arrivée"].apply(add_blue_dot)
-        
         empty_row = pd.DataFrame([{col: "" for col in df_display.columns}])
         empty_row["Guide Envoyé"] = "Non"
         empty_row["Plateforme"] = "" 
         df_with_add = pd.concat([empty_row, df_display], ignore_index=True)
         
-        # Configuration des listes déroulantes (Guide Envoyé ET Plateforme)
         column_config = {
             "Guide Envoyé": st.column_config.SelectboxColumn(options=["Non", "Oui"], default="Non"),
             "Plateforme": st.column_config.SelectboxColumn(options=["Airbnb", "Booking", "Direct"], default="Airbnb")
@@ -377,18 +369,13 @@ if check_password():
         if st.button("💾 SAUVEGARDER LES MODIFICATIONS"):
             df_to_save = edited_resa[edited_resa['Prénom_Nom'] != ""].copy()
             df_to_save["Date Arrivée"] = df_to_save["Date Arrivée"].str.replace("🔵 ", "", regex=False)
-            
             def get_code_autre(row):
                 res = str(row.get('Code Résidence', ''))
                 return res[:-1] if len(res) > 1 else row.get('Code Autre', '')
-            
             df_to_save['Code Autre'] = df_to_save.apply(get_code_autre, axis=1)
             df_to_save = df_to_save.sort_values(by="Date Arrivée", ascending=False)
-            
-            # Sauvegarde dans Supabase (mettra automatiquement à jour la structure de la table pour inclure la colonne)
             df_to_save.to_sql("reservations", conn.engine, if_exists="replace", index=False)
-            
-            st.success("Sauvegarde réussie dans Supabase avec la plateforme !")
+            st.success("Sauvegarde réussie !")
             st.rerun()
             
         st.divider()
@@ -396,7 +383,6 @@ if check_password():
         calendar_events = []
         for _, row in df_resa.iterrows():
             if row['Date Arrivée'] and row['Date Départ']:
-                # Optionnel : On affiche le nom de la plateforme dans le calendrier à côté du nom
                 plat = f" [{row['Plateforme']}]" if row.get('Plateforme') else ""
                 calendar_events.append({
                     "title": f"{row['Prénom_Nom']}{plat} ({row['Appartement']})", 
