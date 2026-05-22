@@ -1104,28 +1104,38 @@ if check_password():
     #PAGE PERSO PATRIMOINE
     elif page == "Patrimoine Maxence":
         st.title("💰 Patrimoine Maxence")
-        # ... (tes calculs de patrimoine) ...
 
-        st.subheader("Détail des actifs")
-        st.write("📈 **Bourse**")
-
-        # Exemple de données avec les nouvelles colonnes
-        # Tu peux remplacer ces listes par les données réelles de ton tableau
+        # 1. Préparation des données (Vides par défaut)
         data_bourse = {
             "Actif": ["PEA - Bourso Bank", "CTO - Trade Republic", "Wallet Crypto"],
-            "Prix Actuel": [11942.66, 12805.58, 528.10],
-            "Montant Investi": [11331.85, 9861.83, 533.76],
+            "Prix Actuel": [0.0, 0.0, 0.0],
+            "Montant Investi": [0.0, 0.0, 0.0],
         }
         
         df_bourse = pd.DataFrame(data_bourse)
+
+        st.subheader("📈 Bourse")
         
-        # Calcul automatique de la variation en %
-        df_bourse["Variation (%)"] = (df_bourse["Prix Actuel"] / df_bourse["Montant Investi"]) - 1
-        
-        # Affichage avec formatage
-        # On affiche le dataframe pour qu'il soit plus propre qu'un st.table simple
+        # 2. Éditeur interactif : tu saisis les valeurs, et le tableau se met à jour
+        edited_df = st.data_editor(
+            df_bourse, 
+            column_config={
+                "Prix Actuel": st.column_config.NumberColumn("Prix Actuel (€)", format="%.2f"),
+                "Montant Investi": st.column_config.NumberColumn("Montant Investi (€)", format="%.2f"),
+            },
+            use_container_width=True
+        )
+
+        # 3. Calcul automatique de la variation en % (uniquement si Montant > 0 pour éviter division par zéro)
+        edited_df["Variation (%)"] = edited_df.apply(
+            lambda row: ((row["Prix Actuel"] / row["Montant Investi"]) - 1) if row["Montant Investi"] > 0 else 0.0, 
+            axis=1
+        )
+
+        # 4. Affichage du résultat final avec formatage
+        st.write("---")
         st.dataframe(
-            df_bourse.style.format({
+            edited_df.style.format({
                 "Prix Actuel": "{:,.2f} €",
                 "Montant Investi": "{:,.2f} €",
                 "Variation (%)": "{:+.2%}"
