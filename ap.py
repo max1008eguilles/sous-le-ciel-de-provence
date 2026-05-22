@@ -1112,47 +1112,47 @@ if check_password():
                 "Montant Investi": [11331.85, 9861.83, 533.76],
             })
 
-        # 1. Préparation des données et calculs
-        df_display = st.session_state.df_bourse.copy()
-        
-        # Sécurisation des nombres
-        df_display["Prix Actuel"] = pd.to_numeric(df_display["Prix Actuel"], errors='coerce').fillna(0.0)
-        df_display["Montant Investi"] = pd.to_numeric(df_display["Montant Investi"], errors='coerce').fillna(0.0)
-        
-        # Calcul du total pour les pourcentages
-        total_actuel = df_display["Prix Actuel"].sum()
-        
-        # Calcul de la répartition (% du total)
-        df_display["% Total"] = df_display["Prix Actuel"] / total_actuel * 100 if total_actuel > 0 else 0.0
-        
-        # Calcul de la variation
-        df_display["Variation (%)"] = df_display.apply(
-            lambda row: ((row["Prix Actuel"] / row["Montant Investi"]) - 1) if row["Montant Investi"] > 0 else 0.0, 
-            axis=1
-        )
-        
-        # Réorganiser les colonnes pour mettre "% Total" au début
-        cols = ["% Total"] + [c for c in df_display.columns if c != "% Total"]
-        df_display = df_display[cols]
+        df_edit = st.session_state.df_bourse.copy()
 
-        st.subheader("📈 Gestion de vos actifs")
-        
+        # 1. Calcul dynamique
+        def calculer_ligne(row):
+            prix = float(row["Prix Actuel"])
+            invest = float(row["Montant Investi"])
+            
+            # Pour CTO et Crypto : calcul inversé si on modifie la variation
+            if row["Actif"] in ["CTO - Trade Republic", "Wallet Crypto"]:
+                # Si tu saisis une variation, on recalcule le montant investi
+                # Formule: Investi = Prix / (1 + Variation)
+                # Note: Ici on suppose que tu as une colonne "Variation (%)" dans le dataframe
+                var = float(row.get("Variation (%)", 0))
+                if (1 + var) != 0:
+                    invest = prix / (1 + var)
+                return invest
+            return invest
+
         # 2. Éditeur unique
+        # On ajoute la colonne Variation pour permettre la saisie
+        df_edit["Variation (%)"] = (df_edit["Prix Actuel"] / df_edit["Montant Investi"]) - 1
+        
         edited_df = st.data_editor(
-            df_display,
+            df_edit,
             key="editor_unique",
             use_container_width=True,
-            num_rows="dynamic",
             column_config={
-                "Prix Actuel": st.column_config.NumberColumn("Prix Actuel (€)", format="%.2f"),
-                "Montant Investi": st.column_config.NumberColumn("Montant Investi (€)", format="%.2f"),
-                "% Total": st.column_config.NumberColumn("% Total", format="%.2f %%", disabled=True),
-                "Variation (%)": st.column_config.NumberColumn("Variation (%)", format="%.2f %%", disabled=True),
+                "Variation (%)": st.column_config.NumberColumn("Variation (%)", format="%.2f"),
             }
         )
 
-        # 3. Sauvegarde
+        # 3. Application de la logique inversée pour les lignes spécifiques
+        # Si tu modifies la variation pour CTO/Crypto, on recalcule le Montant Investi
+        for i, row in edited_df.iterrows():
+            if row["Actif"] in ["CTO - Trade Republic", "Wallet Crypto"]:
+                var = float(row["Variation (%)"])
+                prix = float(row["Prix Actuel"])
+                if (1 + var) != 0:
+                    edited_df.at[i, "Montant Investi"] = prix / (1 + var)
+
+        # 4. Enregistrement
         if st.button("💾 Enregistrer"):
-            # On ne garde que les colonnes sources pour la sauvegarde
-            st.session_state.df_bourse = edited_df[["Actif", "Prix Actuel", "Montant Investi"]]
+            st.session_state.df_bourse = edited_df.drop(columns=["Variation (%)"])
             st.rerun()
