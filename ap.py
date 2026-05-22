@@ -1112,22 +1112,32 @@ if check_password():
                 "Montant Investi": [11331.85, 9861.83, 533.76],
             })
 
-        # 1. Calcul de la colonne "Variation" en amont pour éviter les erreurs
+        # 1. Préparation des données et calculs
         df_display = st.session_state.df_bourse.copy()
         
-        # Conversion sécurisée en float avant tout calcul
+        # Sécurisation des nombres
         df_display["Prix Actuel"] = pd.to_numeric(df_display["Prix Actuel"], errors='coerce').fillna(0.0)
         df_display["Montant Investi"] = pd.to_numeric(df_display["Montant Investi"], errors='coerce').fillna(0.0)
         
+        # Calcul du total pour les pourcentages
+        total_actuel = df_display["Prix Actuel"].sum()
+        
+        # Calcul de la répartition (% du total)
+        df_display["% Total"] = df_display["Prix Actuel"] / total_actuel if total_actuel > 0 else 0.0
+        
+        # Calcul de la variation
         df_display["Variation (%)"] = df_display.apply(
             lambda row: ((row["Prix Actuel"] / row["Montant Investi"]) - 1) if row["Montant Investi"] > 0 else 0.0, 
             axis=1
         )
+        
+        # Réorganiser les colonnes pour mettre "% Total" au début
+        cols = ["% Total"] + [c for c in df_display.columns if c != "% Total"]
+        df_display = df_display[cols]
 
         st.subheader("📈 Gestion de vos actifs")
         
-        # 2. SEUL ET UNIQUE TABLEAU
-        # On affiche df_display. C'est lui qui est éditable ET calculé.
+        # 2. Éditeur unique
         edited_df = st.data_editor(
             df_display,
             key="editor_unique",
@@ -1136,12 +1146,13 @@ if check_password():
             column_config={
                 "Prix Actuel": st.column_config.NumberColumn("Prix Actuel (€)", format="%.2f"),
                 "Montant Investi": st.column_config.NumberColumn("Montant Investi (€)", format="%.2f"),
+                "% Total": st.column_config.NumberColumn("% Total", format="%.2f %%", disabled=True),
                 "Variation (%)": st.column_config.NumberColumn("Variation (%)", format="%.2f %%", disabled=True),
             }
         )
 
         # 3. Sauvegarde
         if st.button("💾 Enregistrer"):
-            # On retire la colonne calculée avant de sauver dans le session_state
-            st.session_state.df_bourse = edited_df.drop(columns=["Variation (%)"])
+            # On ne garde que les colonnes sources pour la sauvegarde
+            st.session_state.df_bourse = edited_df[["Actif", "Prix Actuel", "Montant Investi"]]
             st.rerun()
