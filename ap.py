@@ -1105,7 +1105,6 @@ if check_password():
     elif page == "Patrimoine Maxence":
         st.title("💰 Patrimoine Maxence")
 
-        # 1. Initialisation dans session_state
         if 'df_bourse' not in st.session_state:
             st.session_state.df_bourse = pd.DataFrame({
                 "Actif": ["PEA - Bourso Bank", "CTO - Trade Republic", "Wallet Crypto"],
@@ -1115,34 +1114,33 @@ if check_password():
 
         st.subheader("📈 Gestion de vos actifs")
         
-        # 2. Éditeur unique
-        edited_df = st.data_editor(
-            st.session_state.df_bourse,
-            key="editor_bourse_unique",
-            use_container_width=True,
-            num_rows="dynamic"
-        )
-
-        # 3. Calcul robuste : forcer la conversion en numérique
-        # On crée une copie pour afficher sans modifier la source par erreur
-        display_df = edited_df.copy()
+        # 1. On travaille sur une copie
+        df_edit = st.session_state.df_bourse.copy()
         
-        # Conversion forcée en nombres (les erreurs deviennent NaN)
-        display_df["Prix Actuel"] = pd.to_numeric(display_df["Prix Actuel"], errors="coerce").fillna(0.0)
-        display_df["Montant Investi"] = pd.to_numeric(display_df["Montant Investi"], errors="coerce").fillna(0.0)
-        
-        # Calcul de la variation
-        display_df["Variation (%)"] = display_df.apply(
-            lambda row: ((row["Prix Actuel"] / row["Montant Investi"]) - 1) if row["Montant Investi"] > 0 else 0.0, 
+        # 2. Calcul immédiat (sécurisé)
+        df_edit["Variation (%)"] = df_edit.apply(
+            lambda row: ((float(row["Prix Actuel"]) / float(row["Montant Investi"])) - 1) 
+            if float(row["Montant Investi"]) > 0 else 0.0, 
             axis=1
         )
 
-        # 4. Affichage simple (sans le .style qui cause l'autre erreur)
-        # On affiche le dataframe tel quel pour plus de stabilité
-        st.dataframe(display_df, use_container_width=True)
+        # 3. Éditeur unique avec formatage intégré
+        # Cela remplace et l'éditeur et l'affichage de performance
+        edited_df = st.data_editor(
+            df_edit,
+            key="editor_bourse_unique",
+            use_container_width=True,
+            num_rows="dynamic",
+            column_config={
+                "Prix Actuel": st.column_config.NumberColumn("Prix Actuel (€)", format="%.2f €"),
+                "Montant Investi": st.column_config.NumberColumn("Montant Investi (€)", format="%.2f €"),
+                "Variation (%)": st.column_config.NumberColumn("Variation (%)", format="%.2f %%"),
+            }
+        )
 
-        # 5. Enregistrement manuel
+        # 4. Enregistrement des modifs dans le session_state
         if st.button("💾 Enregistrer les modifications"):
-            st.session_state.df_bourse = edited_df
+            # On retire la colonne calculée avant de sauvegarder pour ne garder que la source
+            st.session_state.df_bourse = edited_df.drop(columns=["Variation (%)"])
             st.success("Modifications enregistrées !")
             st.rerun()
