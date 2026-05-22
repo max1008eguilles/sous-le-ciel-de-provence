@@ -1105,7 +1105,7 @@ if check_password():
     elif page == "Patrimoine Maxence":
         st.title("💰 Patrimoine Maxence")
 
-        # 1. Initialisation sécurisée
+        # 1. Initialisation dans session_state
         if 'df_bourse' not in st.session_state:
             st.session_state.df_bourse = pd.DataFrame({
                 "Actif": ["PEA - Bourso Bank", "CTO - Trade Republic", "Wallet Crypto"],
@@ -1115,7 +1115,7 @@ if check_password():
 
         st.subheader("📈 Gestion de vos actifs")
         
-        # 2. Éditeur unique (on ne calcule pas ici pour éviter l'erreur pendant l'édition)
+        # 2. Éditeur unique
         edited_df = st.data_editor(
             st.session_state.df_bourse,
             key="editor_bourse_unique",
@@ -1123,30 +1123,23 @@ if check_password():
             num_rows="dynamic"
         )
 
-        # 3. Calcul robuste : on convertit en numérique, on remplace les erreurs par 0
-        def calculer_variation(row):
-            try:
-                prix = float(row["Prix Actuel"])
-                invest = float(row["Montant Investi"])
-                if invest > 0:
-                    return (prix / invest) - 1
-                return 0.0
-            except:
-                return 0.0
-
-        # On crée une copie pour l'affichage sans modifier la source tout de suite
+        # 3. Calcul robuste : forcer la conversion en numérique
+        # On crée une copie pour afficher sans modifier la source par erreur
         display_df = edited_df.copy()
-        display_df["Variation (%)"] = display_df.apply(calculer_variation, axis=1)
-
-        # 4. Affichage unique et propre
-        st.dataframe(
-            display_df.style.format({
-                "Prix Actuel": "{:,.2f} €",
-                "Montant Investi": "{:,.2f} €",
-                "Variation (%)": "{:+.2%}"
-            }),
-            use_container_width=True
+        
+        # Conversion forcée en nombres (les erreurs deviennent NaN)
+        display_df["Prix Actuel"] = pd.to_numeric(display_df["Prix Actuel"], errors="coerce").fillna(0.0)
+        display_df["Montant Investi"] = pd.to_numeric(display_df["Montant Investi"], errors="coerce").fillna(0.0)
+        
+        # Calcul de la variation
+        display_df["Variation (%)"] = display_df.apply(
+            lambda row: ((row["Prix Actuel"] / row["Montant Investi"]) - 1) if row["Montant Investi"] > 0 else 0.0, 
+            axis=1
         )
+
+        # 4. Affichage simple (sans le .style qui cause l'autre erreur)
+        # On affiche le dataframe tel quel pour plus de stabilité
+        st.dataframe(display_df, use_container_width=True)
 
         # 5. Enregistrement manuel
         if st.button("💾 Enregistrer les modifications"):
