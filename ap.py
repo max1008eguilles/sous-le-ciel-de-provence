@@ -315,22 +315,14 @@ if check_password():
                         df_compta.to_csv(COMPTA_FILE, index=False)
                         st.rerun()
             with g3:
-                # L'indentation ici est CRUCIALE : tout ce qui suit doit être décalé vers la droite
-                if st.button("🛑 SUPPRIMER LA LIGNE", type="primary", key=f"del_{vrai_idx}"):
-                    try:
-                        # 1. Suppression réelle dans la base SQL
-                        with conn.session as session:
-                            session.execute(text("DELETE FROM compta WHERE id = :id"), {"id": vrai_idx})
-                            session.commit()
-                        
-                        # 2. Mise à jour de l'affichage local
-                        st.session_state.df_compta = st.session_state.df_compta.drop(vrai_idx)
-                        
-                        st.success("Ligne supprimée avec succès.")
-                        st.rerun() 
-                        
-                    except Exception as e:
-                        st.error(f"Erreur lors de la suppression : {e}")
+                if st.button("🛑 SUPPRIMER LA LIGNE", type="primary", key=f"del_l_{vrai_idx}"):
+                    if path_j != "Vide" and os.path.exists(path_j):
+                        try: os.remove(path_j)
+                        except: pass
+                    df_compta = df_compta.drop(vrai_idx)
+                    df_compta.to_csv(COMPTA_FILE, index=False)
+                    st.rerun()
+
             
                         
    # --- PAGE RÉSERVATIONS ---
