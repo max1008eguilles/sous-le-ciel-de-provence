@@ -315,13 +315,23 @@ if check_password():
                         df_compta.to_csv(COMPTA_FILE, index=False)
                         st.rerun()
             with g3:
-                if st.button("🛑 SUPPRIMER LA LIGNE", type="primary", key=f"del_l_{vrai_idx}"):
-                    if path_j != "Vide" and os.path.exists(path_j):
-                        try: os.remove(path_j)
-                        except: pass
-                    df_compta = df_compta.drop(vrai_idx)
-                    df_compta.to_csv(COMPTA_FILE, index=False)
-                    st.rerun()
+                if st.button("🛑 SUPPRIMER LA LIGNE", type="primary", key=f"del_{vrai_idx}"):
+                    try:
+                        # 1. Suppression dans la base PostgreSQL via la connexion SQL
+                        with conn.session as session:
+                            # On convertit explicitement en int pour éviter l'erreur numpy.int64
+                            session.execute(text("DELETE FROM compta WHERE id = :id"), {"id": int(vrai_idx)})
+                            session.commit()
+                        
+                        # 2. Mise à jour de la session pour rafraîchir l'affichage
+                        # On supprime localement dans le DataFrame de la session
+                        st.session_state.df_compta = st.session_state.df_compta.drop(vrai_idx)
+                        
+                        st.success("Ligne supprimée avec succès.")
+                        st.rerun() 
+                        
+                    except Exception as e:
+                        st.error(f"Erreur lors de la suppression : {e}")
 
             
                         
