@@ -7,6 +7,8 @@ import requests
 from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
 from streamlit_calendar import calendar
+from sqlalchemy import text
+
 # --- INITIALISATION DE LA CONNEXION SQL ---
 conn = st.connection("postgresql", type="sql")
 
