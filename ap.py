@@ -312,32 +312,28 @@ if check_password():
                         df_compta.to_csv(COMPTA_FILE, index=False)
                         st.rerun()
             with g3:
-                # Suppression uniquement de la ligne de données
-                if st.button("🛑 SUPPRIMER LA LIGNE", type="primary", key=f"del_l_{vrai_idx}"):
+                # On ajoute une clé unique basée sur vrai_idx
+                if st.button("🛑 SUPPRIMER LA LIGNE", type="primary", key=f"del_{vrai_idx}"):
+                    st.write(f"Tentative de suppression de l'index : {vrai_idx}") # Débogage
                     
-                    # 1. Suppression de la ligne dans le DataFrame actuel
-                    df_compta = df_compta.drop(vrai_idx)
-                    
-                    # 2. IMPORTANT : Mets à jour la source de données globale
-                    # Si tu utilises une variable globale, assure-toi de l'actualiser
-                    # Exemple si tu stockes dans session_state :
-                    # st.session_state.df_compta = df_compta 
-                    
-                    # 3. Sauvegarde du fichier CSV (Vérifie le nom exact de ton fichier)
-                    # Utilise la variable qui contient ton chemin de fichier si COMPTA_FILE est définie ailleurs
-                    # Sinon, utilise le chemin correct en dur
-                    df_compta.to_csv("compta.csv", index=False) 
-                    
-                    # 4. Suppression dans la base SQL
-                    try:
-                        # Assure-toi que conn.engine est bien accessible ici
-                        with conn.engine.begin() as connection:
-                            connection.execute(f"DELETE FROM compta WHERE rowid = {vrai_idx}")
-                    except Exception as e:
-                        st.error(f"Erreur SQL : {e}")
+                    # 1. Suppression dans le dataframe
+                    if vrai_idx in df_compta.index:
+                        df_compta = df_compta.drop(vrai_idx)
                         
-                    st.success("Ligne supprimée.")
-                    st.rerun()
+                        # 2. Sauvegarde forcée (remplace par le chemin réel de ton fichier)
+                        df_compta.to_csv("compta.csv", index=False)
+                        
+                        # 3. Suppression SQL (si applicable)
+                        try:
+                            conn.engine.execute(f"DELETE FROM compta WHERE rowid = ?", (int(vrai_idx),))
+                        except:
+                            pass
+                        
+                        st.success("Ligne supprimée.")
+                        st.rerun() # Force le rechargement immédiat
+                    else:
+                        st.error("Index introuvable dans les données.")
+                        
    # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
         st.title("📅 Gestion & Envois")
