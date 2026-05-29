@@ -314,6 +314,7 @@ if check_password():
                         df_compta.at[vrai_idx, "Justificatif"] = fp
                         df_compta.to_csv(COMPTA_FILE, index=False)
                         st.rerun()
+
             with g3:
     if st.button("🛑 SUPPRIMER LA LIGNE", type="primary", key=f"del_{vrai_idx}"):
         try:
