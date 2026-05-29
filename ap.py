@@ -314,6 +314,17 @@ if check_password():
                         df_compta.at[vrai_idx, "Justificatif"] = fp
                         df_compta.to_csv(COMPTA_FILE, index=False)
                         st.rerun()
+               
+            # Ajoutez ceci dans votre mise en page, là où vous voulez le bouton
+            with st.container():
+                if st.button("🛑 SUPPRIMER LA LIGNE SÉLECTIONNÉE"):
+                    # Assurez-vous d'avoir récupéré l'ID de la ligne sélectionnée dans le journal
+                    # Remplacez 'id' par le nom exact trouvé dans Supabase
+                    with conn.session as session:
+                        session.execute(text("DELETE FROM compta WHERE id = :id"), {"id": int(vrai_idx)})
+                        session.commit()
+                    st.success("Ligne supprimée.")
+                    st.rerun()
             
     
             
