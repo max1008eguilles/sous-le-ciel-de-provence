@@ -195,7 +195,6 @@ if check_password():
                     fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net Bien'] + (row['Capital Restant']/2), text=f"<b>{row['Capital Restant']:,.0f}€</b><br>{row['% Dette']:.1f}%", showarrow=False)
             st.plotly_chart(fig, use_container_width=True)
 
-    # --- PAGE COMPTA ---
     elif page == "COMPTA":
         st.title("💰 Gestion Comptable & Archive")
         import os, zipfile, io
@@ -205,6 +204,7 @@ if check_password():
         
         def calculer_solde(df, compte):
             temp = df[df["Compte"] == compte].copy()
+            # Pour le solde réel, on prend le montant brut (qu'il soit positif ou négatif)
             pos = temp[temp["Type"].isin(["Revenu", "Apport"])]["Montant"].sum()
             neg = temp[temp["Type"].isin(["Dépense", "Crédit", "Remboursement CCA"])]["Montant"].sum()
             return pos - neg
@@ -220,14 +220,20 @@ if check_password():
         if not df_compta.empty:
             st.divider()
             st.subheader("📊 Analyse Financière")
-            df_calc = df_compta.copy()
+            
+            # FILTRE : On exclut le Cash et les Remboursements CCA de l'analyse
+            df_calc = df_compta[
+                (df_compta["Compte"] != "Cash") & 
+                (df_compta["Type"] != "Remboursement CCA")
+            ].copy()
+            
             df_calc['Date'] = pd.to_datetime(df_calc['Date'])
             df_calc['Année'] = df_calc['Date'].dt.strftime('%Y')
             df_calc['Mois'] = df_calc['Date'].dt.strftime('%m/%Y')
             recap_y = df_calc.groupby(['Année', 'Type'])['Montant'].sum().unstack(fill_value=0)
             recap_m = df_calc.groupby(['Mois', 'Type', 'Année'])['Montant'].sum().unstack(level=1, fill_value=0)
             
-            for col in ["Revenu", "Dépense", "Crédit", "Apport", "Remboursement CCA"]:
+            for col in ["Revenu", "Dépense", "Crédit", "Apport"]:
                 if col not in recap_y.columns: recap_y[col] = 0.0
                 if col not in recap_m.columns: recap_m[col] = 0.0
             
@@ -249,7 +255,8 @@ if check_password():
                 f_date = col_a.date_input("Date", date.today())
                 f_type = col_a.selectbox("Type", ["Revenu", "Dépense", "Crédit", "Apport", "Remboursement CCA"])
                 f_cpt = col_b.selectbox("Compte", ["CIC", "Cash"])
-                f_mnt = col_b.number_input("Montant", min_value=0.0, format="%.2f")
+                # Suppression de min_value pour permettre les négatifs
+                f_mnt = col_b.number_input("Montant", format="%.2f") 
                 f_com = st.text_input("Commentaire")
                 f_file = st.file_uploader("Joindre le justificatif", type=["pdf","png","jpg","jpeg"])
                 if st.form_submit_button("Valider l'ajout"):
@@ -261,6 +268,7 @@ if check_password():
                     df_compta = pd.concat([df_compta, new_entry], ignore_index=True)
                     new_entry.to_sql("compta", conn.engine, if_exists="append", index=False)
                     st.rerun()
+        # ... (reste du code inchangé)
 
         st.divider()
         col_titre, col_zip = st.columns([2, 1])
