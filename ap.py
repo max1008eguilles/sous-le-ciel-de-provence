@@ -313,11 +313,25 @@ if check_password():
                         st.rerun()
             with g3:
                 if st.button("🛑 SUPPRIMER LA LIGNE", type="primary", key=f"del_l_{vrai_idx}"):
+                    # 1. Suppression du fichier justificatif
                     if path_j != "Vide" and os.path.exists(path_j):
                         try: os.remove(path_j)
                         except: pass
+                    
+                    # 2. Suppression de la ligne dans le DataFrame
                     df_compta = df_compta.drop(vrai_idx)
-                    df_compta.to_csv(COMPTA_FILE, index=False)
+                    
+                    # 3. Sauvegarde propre du fichier CSV
+                    # Remplace 'ta_compta.csv' par le nom réel de ton fichier si besoin
+                    df_compta.to_csv("compta.csv", index=False) 
+                    
+                    # 4. Suppression dans la base SQL
+                    try:
+                        conn.engine.execute(f"DELETE FROM compta WHERE rowid = {vrai_idx}")
+                    except:
+                        pass
+                        
+                    st.success("Ligne supprimée.")
                     st.rerun()
 
    # --- PAGE RÉSERVATIONS ---
