@@ -314,18 +314,16 @@ if check_password():
                         st.rerun()
             with g3:
                 if st.button("🛑 SUPPRIMER LA LIGNE", type="primary", key=f"del_{vrai_idx}"):
-                    # 1. Suppression dans la base Supabase
-                    # On suppose que 'supabase' est votre client initialisé ailleurs dans le code
                     try:
-                        # 'compta' est le nom de votre table dans Supabase
-                        # On utilise l'ID (ou le rowid) pour identifier la ligne
+                        # 1. Suppression dans Supabase
+                        # Assurez-vous que la colonne s'appelle bien "id" dans votre table
                         supabase.table("compta").delete().eq("id", vrai_idx).execute()
                         
-                        # 2. Suppression locale dans le dataframe pour mettre à jour l'affichage
-                        df_compta = df_compta.drop(vrai_idx)
-                        st.session_state.df_compta = df_compta # Si vous stockez en session
+                        # 2. Suppression dans le DataFrame local pour rafraîchir l'écran
+                        # On réassigne à st.session_state pour être sûr que Streamlit voit le changement
+                        st.session_state.df_compta = df_compta.drop(vrai_idx)
                         
-                        st.success("Ligne supprimée de Supabase.")
+                        st.success("Ligne supprimée avec succès.")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erreur Supabase : {e}")
