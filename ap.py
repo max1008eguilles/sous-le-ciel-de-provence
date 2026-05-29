@@ -314,8 +314,8 @@ if check_password():
                         st.rerun()
             with g3:
     # On utilise un bouton avec une clé unique basée sur l'ID de la ligne
-    if st.button("🛑 SUPPRIMER LA LIGNE", type="primary", key=f"del_{vrai_idx}"):
-        try:
+        if st.button("🛑 SUPPRIMER LA LIGNE", type="primary", key=f"del_{vrai_idx}"):
+            try:
             # 1. Suppression réelle dans la base de données Supabase
             # Assurez-vous que 'compta' est le nom exact de votre table dans Supabase
             # Si votre colonne d'ID ne s'appelle pas 'id', remplacez 'id' par le bon nom
