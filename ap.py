@@ -313,20 +313,25 @@ if check_password():
                         df_compta.to_csv(COMPTA_FILE, index=False)
                         st.rerun()
             with g3:
-                if st.button("🛑 SUPPRIMER LA LIGNE", type="primary", key=f"del_{vrai_idx}"):
-                    try:
-                        # 1. Suppression dans Supabase
-                        # Assurez-vous que la colonne s'appelle bien "id" dans votre table
-                        supabase.table("compta").delete().eq("id", vrai_idx).execute()
-                        
-                        # 2. Suppression dans le DataFrame local pour rafraîchir l'écran
-                        # On réassigne à st.session_state pour être sûr que Streamlit voit le changement
-                        st.session_state.df_compta = df_compta.drop(vrai_idx)
-                        
-                        st.success("Ligne supprimée avec succès.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erreur Supabase : {e}")
+    # On utilise un bouton avec une clé unique basée sur l'ID de la ligne
+    if st.button("🛑 SUPPRIMER LA LIGNE", type="primary", key=f"del_{vrai_idx}"):
+        try:
+            # 1. Suppression réelle dans la base de données Supabase
+            # Assurez-vous que 'compta' est le nom exact de votre table dans Supabase
+            # Si votre colonne d'ID ne s'appelle pas 'id', remplacez 'id' par le bon nom
+            supabase.table("compta").delete().eq("id", vrai_idx).execute()
+            
+            # 2. Mise à jour de l'affichage local (session_state)
+            # Cela force le tableau à se rafraîchir sans la ligne supprimée
+            st.session_state.df_compta = st.session_state.df_compta.drop(vrai_idx)
+            
+            st.success("Ligne supprimée avec succès.")
+            st.rerun() # Recharge immédiatement la page pour refléter le changement
+            
+        except NameError:
+            st.error("Erreur : Le client Supabase n'est pas initialisé (variable 'supabase' introuvable).")
+        except Exception as e:
+            st.error(f"Erreur Supabase : {e}")
                         
    # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
