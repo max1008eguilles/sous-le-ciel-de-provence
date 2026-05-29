@@ -143,7 +143,7 @@ if check_password():
         
         # Ajout conditionnel de la page Patrimoine (Vérifie bien que ton user est "Maxence")
         if user_name == "Maxence":
-            pages.append("Patrimoine Maxence")
+            pages.append("PERSO Maxence")
             
         page = st.radio("Aller vers :", pages)
         
@@ -1103,7 +1103,7 @@ if check_password():
 
     #PAGE PERSO PATRIMOINE
     elif page == "Patrimoine Maxence":
-        st.title("💰 Patrimoine Maxence")
+        st.title("PERSO Maxence")
 
         if 'df_bourse' not in st.session_state:
             st.session_state.df_bourse = pd.DataFrame({
