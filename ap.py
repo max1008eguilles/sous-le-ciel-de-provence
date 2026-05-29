@@ -314,22 +314,26 @@ if check_password():
                         df_compta.at[vrai_idx, "Justificatif"] = fp
                         df_compta.to_csv(COMPTA_FILE, index=False)
                         st.rerun()
-
-            
             with g3:
                 if st.button("🛑 SUPPRIMER LA LIGNE", type="primary", key=f"del_{vrai_idx}"):
                     try:
+                        # Suppression réelle dans la base PostgreSQL
                         with conn.session as session:
-                # REMPLACEZ 'id' PAR LE NOM RÉEL DE VOTRE COLONNE
-                        session.execute(text("DELETE FROM compta WHERE rowid = :rowid"), {"rowid": int(vrai_idx)})
-                        session.commit()
-            
+                            # Assurez-vous que 'id' est bien le nom de votre colonne clé primaire
+                            session.execute(text("DELETE FROM compta WHERE id = :id"), {"id": int(vrai_idx)})
+                            session.commit()
+                        
+                        # Mise à jour du DataFrame en session
                         st.session_state.df_compta = st.session_state.df_compta.drop(vrai_idx)
+                        
                         st.success("Ligne supprimée avec succès.")
-            st.rerun() 
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"Erreur lors de la suppression : {e}")
+    
             
-            except Exception as e:
-                st.error(f"Erreur lors de la suppression : {e}")
+            
 
             
                         
