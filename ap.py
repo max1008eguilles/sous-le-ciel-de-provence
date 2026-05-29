@@ -315,21 +315,29 @@ if check_password():
                 # Suppression uniquement de la ligne de données
                 if st.button("🛑 SUPPRIMER LA LIGNE", type="primary", key=f"del_l_{vrai_idx}"):
                     
-                    # 1. Suppression de la ligne dans le DataFrame local
+                    # 1. Suppression de la ligne dans le DataFrame actuel
                     df_compta = df_compta.drop(vrai_idx)
                     
-                    # 2. Sauvegarde du fichier de données (remplace 'compta.csv' par ton vrai nom de fichier)
+                    # 2. IMPORTANT : Mets à jour la source de données globale
+                    # Si tu utilises une variable globale, assure-toi de l'actualiser
+                    # Exemple si tu stockes dans session_state :
+                    # st.session_state.df_compta = df_compta 
+                    
+                    # 3. Sauvegarde du fichier CSV (Vérifie le nom exact de ton fichier)
+                    # Utilise la variable qui contient ton chemin de fichier si COMPTA_FILE est définie ailleurs
+                    # Sinon, utilise le chemin correct en dur
                     df_compta.to_csv("compta.csv", index=False) 
                     
-                    # 3. Suppression dans la base SQL
+                    # 4. Suppression dans la base SQL
                     try:
-                        conn.engine.execute(f"DELETE FROM compta WHERE rowid = {vrai_idx}")
-                    except:
-                        pass
+                        # Assure-toi que conn.engine est bien accessible ici
+                        with conn.engine.begin() as connection:
+                            connection.execute(f"DELETE FROM compta WHERE rowid = {vrai_idx}")
+                    except Exception as e:
+                        st.error(f"Erreur SQL : {e}")
                         
-                    st.success("Ligne supprimée (fichier conservé).")
+                    st.success("Ligne supprimée.")
                     st.rerun()
-
    # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
         st.title("📅 Gestion & Envois")
