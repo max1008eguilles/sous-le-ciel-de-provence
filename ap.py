@@ -195,6 +195,7 @@ if check_password():
                     fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net Bien'] + (row['Capital Restant']/2), text=f"<b>{row['Capital Restant']:,.0f}€</b><br>{row['% Dette']:.1f}%", showarrow=False)
             st.plotly_chart(fig, use_container_width=True)
 
+    #COMPTA
     elif page == "COMPTA":
         st.title("💰 Gestion Comptable & Archive")
         import os, zipfile, io
@@ -312,27 +313,30 @@ if check_password():
                         df_compta.to_csv(COMPTA_FILE, index=False)
                         st.rerun()
             with g3:
-                # On ajoute une clé unique basée sur vrai_idx
+                # On utilise une clé unique basée sur vrai_idx
                 if st.button("🛑 SUPPRIMER LA LIGNE", type="primary", key=f"del_{vrai_idx}"):
-                    st.write(f"Tentative de suppression de l'index : {vrai_idx}") # Débogage
                     
-                    # 1. Suppression dans le dataframe
-                    if vrai_idx in df_compta.index:
-                        df_compta = df_compta.drop(vrai_idx)
+                    # 1. Suppression dans le DataFrame en session
+                    # Remplace 'df_compta' par ta variable de session si nécessaire (ex: st.session_state.df_compta)
+                    df_compta = df_compta.drop(vrai_idx)
+                    
+                    # 2. Mise à jour de la variable globale/session (INDISPENSABLE)
+                    # Si tu stockes ton DF dans st.session_state, fais ceci :
+                    # st.session_state.df_compta = df_compta
+                    
+                    # 3. Sauvegarde sur le fichier
+                    # Remplace COMPTA_FILE par le chemin défini dans ton script
+                    df_compta.to_csv(COMPTA_FILE, index=False)
+                    
+                    # 4. Suppression dans la base SQL
+                    try:
+                        with conn.engine.begin() as connection:
+                            connection.execute(f"DELETE FROM compta WHERE rowid = {vrai_idx}")
+                    except Exception as e:
+                        st.error(f"Erreur SQL : {e}")
                         
-                        # 2. Sauvegarde forcée (remplace par le chemin réel de ton fichier)
-                        df_compta.to_csv("compta.csv", index=False)
-                        
-                        # 3. Suppression SQL (si applicable)
-                        try:
-                            conn.engine.execute(f"DELETE FROM compta WHERE rowid = ?", (int(vrai_idx),))
-                        except:
-                            pass
-                        
-                        st.success("Ligne supprimée.")
-                        st.rerun() # Force le rechargement immédiat
-                    else:
-                        st.error("Index introuvable dans les données.")
+                    st.success("Ligne supprimée.")
+                    st.rerun()
                         
    # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
