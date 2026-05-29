@@ -313,30 +313,22 @@ if check_password():
                         df_compta.to_csv(COMPTA_FILE, index=False)
                         st.rerun()
             with g3:
-                # On utilise une clé unique basée sur vrai_idx
                 if st.button("🛑 SUPPRIMER LA LIGNE", type="primary", key=f"del_{vrai_idx}"):
-                    
-                    # 1. Suppression dans le DataFrame en session
-                    # Remplace 'df_compta' par ta variable de session si nécessaire (ex: st.session_state.df_compta)
-                    df_compta = df_compta.drop(vrai_idx)
-                    
-                    # 2. Mise à jour de la variable globale/session (INDISPENSABLE)
-                    # Si tu stockes ton DF dans st.session_state, fais ceci :
-                    # st.session_state.df_compta = df_compta
-                    
-                    # 3. Sauvegarde sur le fichier
-                    # Remplace COMPTA_FILE par le chemin défini dans ton script
-                    df_compta.to_csv(COMPTA_FILE, index=False)
-                    
-                    # 4. Suppression dans la base SQL
+                    # 1. Suppression dans la base Supabase
+                    # On suppose que 'supabase' est votre client initialisé ailleurs dans le code
                     try:
-                        with conn.engine.begin() as connection:
-                            connection.execute(f"DELETE FROM compta WHERE rowid = {vrai_idx}")
-                    except Exception as e:
-                        st.error(f"Erreur SQL : {e}")
+                        # 'compta' est le nom de votre table dans Supabase
+                        # On utilise l'ID (ou le rowid) pour identifier la ligne
+                        supabase.table("compta").delete().eq("id", vrai_idx).execute()
                         
-                    st.success("Ligne supprimée.")
-                    st.rerun()
+                        # 2. Suppression locale dans le dataframe pour mettre à jour l'affichage
+                        df_compta = df_compta.drop(vrai_idx)
+                        st.session_state.df_compta = df_compta # Si vous stockez en session
+                        
+                        st.success("Ligne supprimée de Supabase.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erreur Supabase : {e}")
                         
    # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
