@@ -198,7 +198,7 @@ if check_password():
             st.plotly_chart(fig, use_container_width=True)
 
     #COMPTA
-    elif page == "COMPTA":
+    elif page == "Compta RNM":
         st.title("💰 Gestion Comptable & Archive")
         import os, zipfile, io
         if not os.path.exists("justificatifs"): os.makedirs("justificatifs")
