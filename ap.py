@@ -315,16 +315,25 @@ if check_password():
                         df_compta.to_csv(COMPTA_FILE, index=False)
                         st.rerun()
                
-            # Ajoutez ceci dans votre mise en page, là où vous voulez le bouton
+            # --- SUPPRESSION PROPRE DE LA LIGNE ---
             with st.container():
                 if st.button("🛑 SUPPRIMER LA LIGNE SÉLECTIONNÉE"):
-                    # Assurez-vous d'avoir récupéré l'ID de la ligne sélectionnée dans le journal
-                    # Remplacez 'id' par le nom exact trouvé dans Supabase
-                    with conn.session as session:
-                        session.execute(text("DELETE FROM compta WHERE id = :id"), {"id": int(vrai_idx)})
-                        session.commit()
-                    st.success("Ligne supprimée.")
-                    st.rerun()
+                    try:
+                        # 1. On supprime la ligne du DataFrame en mémoire
+                        df_compta_clean = df_compta.drop(vrai_idx)
+                        
+                        # 2. On réécrit TOUTE la table dans SQL (le 'replace' écrase l'ancienne)
+                        # C'est la méthode "magique" qui évite les erreurs SQL et les IDs
+                        df_compta_clean.to_sql("compta", conn.engine, if_exists="replace", index=False)
+                        
+                        # 3. Optionnel : si tu veux aussi supprimer le fichier physique associé
+                        if os.path.exists(path_j) and path_j != "Vide":
+                            os.remove(path_j)
+                            
+                        st.success("Ligne supprimée avec succès.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erreur lors de la suppression : {e}")
             
     
             
