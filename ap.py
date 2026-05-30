@@ -214,7 +214,7 @@ if check_password():
                     fig.add_annotation(x=row['Bien'], y=row['Patrimoine Net Bien'] + (row['Capital Restant']/2), text=f"<b>{row['Capital Restant']:,.0f}€</b><br>{row['% Dette']:.1f}%", showarrow=False)
             st.plotly_chart(fig, use_container_width=True)
 
-    #COMPTA
+    # --- FIN DU BLOC COMPTA RNM ---
     elif page == "Compta RNM":
         st.title("💰 Gestion Comptable & Archive")
         import os, zipfile, io
@@ -224,7 +224,6 @@ if check_password():
         
         def calculer_solde(df, compte):
             temp = df[df["Compte"] == compte].copy()
-            # Pour le solde réel, on prend le montant brut (qu'il soit positif ou négatif)
             pos = temp[temp["Type"].isin(["Revenu", "Apport"])]["Montant"].sum()
             neg = temp[temp["Type"].isin(["Dépense", "Crédit", "Remboursement CCA"])]["Montant"].sum()
             return pos - neg
@@ -237,154 +236,37 @@ if check_password():
         c2.metric("Espèces (Cash)", f"{s_cash:,.2f} €")
         c3.metric("TOTAL RÉEL", f"{(s_cic + s_cash):,.2f} €")
 
-        if not df_compta.empty:
-            st.divider()
-            st.subheader("📊 Analyse Financière")
-            
-            # FILTRE : On exclut le Cash et les Remboursements CCA de l'analyse
-            df_calc = df_compta[
-                (df_compta["Compte"] != "Cash") & 
-                (df_compta["Type"] != "Remboursement CCA")
-            ].copy()
-            
-            df_calc['Date'] = pd.to_datetime(df_calc['Date'])
-            df_calc['Année'] = df_calc['Date'].dt.strftime('%Y')
-            df_calc['Mois'] = df_calc['Date'].dt.strftime('%m/%Y')
-            recap_y = df_calc.groupby(['Année', 'Type'])['Montant'].sum().unstack(fill_value=0)
-            recap_m = df_calc.groupby(['Mois', 'Type', 'Année'])['Montant'].sum().unstack(level=1, fill_value=0)
-            
-            for col in ["Revenu", "Dépense", "Crédit", "Apport"]:
-                if col not in recap_y.columns: recap_y[col] = 0.0
-                if col not in recap_m.columns: recap_m[col] = 0.0
-            
-            final_rows = []
-            for a in sorted(df_calc['Année'].unique(), reverse=True):
-                v = recap_y.loc[a]
-                cf_y = v["Revenu"] - (v["Dépense"] + v["Crédit"])
-                final_rows.append({"Période": f"TOTAL {a}", "Revenus": v["Revenu"], "Charges": v["Dépense"], "Crédit": v["Crédit"], "Cash Flow": cf_y})
-                mes_mois = recap_m.xs(a, level='Année').sort_index(ascending=False)
-                for m, vm in mes_mois.iterrows():
-                    cf_m = vm["Revenu"] - (vm["Dépense"] + vm["Crédit"])
-                    final_rows.append({"Période": m, "Revenus": vm["Revenu"], "Charges": vm["Dépense"], "Crédit": vm["Crédit"], "Cash Flow": cf_m})
-            st.table(pd.DataFrame(final_rows).set_index("Période").style.format("{:,.2f} €"))
+        # ... (le reste de ton code RNM que tu as déjà) ...
+        # (Assure-toi que la fin du bloc RNM n'est pas indentée plus que le st.title)
 
-        st.divider()
-        with st.expander("➕ Saisir une nouvelle opération", expanded=False):
-            with st.form("new_op_form", clear_on_submit=True):
-                col_a, col_b = st.columns(2)
-                f_date = col_a.date_input("Date", date.today())
-                f_type = col_a.selectbox("Type", ["Revenu", "Dépense", "Crédit", "Apport", "Remboursement CCA"])
-                f_cpt = col_b.selectbox("Compte", ["CIC", "Cash"])
-                # Suppression de min_value pour permettre les négatifs
-                f_mnt = col_b.number_input("Montant", format="%.2f") 
-                f_com = st.text_input("Commentaire")
-                f_file = st.file_uploader("Joindre le justificatif", type=["pdf","png","jpg","jpeg"])
-                if st.form_submit_button("Valider l'ajout"):
-                    p_file = "Vide"
-                    if f_file:
-                        p_file = os.path.join("justificatifs", f"{f_date}_{f_file.name}".replace(" ","_"))
-                        with open(p_file, "wb") as f: f.write(f_file.getbuffer())
-                    new_entry = pd.DataFrame([{"Date": str(f_date), "Type": f_type, "Compte": f_cpt, "Montant": f_mnt, "Commentaire": f_com, "Justificatif": p_file}])
-                    df_compta = pd.concat([df_compta, new_entry], ignore_index=True)
-                    new_entry.to_sql("compta", conn.engine, if_exists="append", index=False)
-                    st.rerun()
-        # ... (reste du code inchangé)
+    # --- NOUVEAU BLOC SCI (Bien aligné au même niveau que le RNM) ---
+    elif page == "Compta SCI":
+        st.title("🏢 Gestion Comptable SCI")
+        import os
+        
+        DOSSIER_SCI = "justificatifs_sci"
+        if not os.path.exists(DOSSIER_SCI): os.makedirs(DOSSIER_SCI)
+        
+        df_sci = load_compta_sci() 
+        df_sci["Justificatif"] = df_sci["Justificatif"].astype(str).replace(["nan", "None", ""], "Vide")
 
-        st.divider()
-        col_titre, col_zip = st.columns([2, 1])
-        with col_titre: st.subheader("📝 Journal des opérations")
-        with col_zip:
-            files_to_zip = [f for f in df_compta["Justificatif"].tolist() if f != "Vide" and os.path.exists(f)]
-            if files_to_zip:
-                buf = io.BytesIO()
-                with zipfile.ZipFile(buf, "w") as z:
-                    for f in files_to_zip: z.write(f, os.path.basename(f))
-                st.download_button("📦 Télécharger tout (ZIP)", buf.getvalue(), "archive_justificatifs.zip", "application/zip")
-
-        df_display = df_compta[["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"]].sort_values(by="Date", ascending=False)
-        event = st.dataframe(df_display, use_container_width=True, on_select="rerun", selection_mode="single-row",
-                            column_config={"Montant": st.column_config.NumberColumn(format="%.2f €")})
+        st.subheader("📝 Journal des opérations SCI")
+        df_display = df_sci.sort_values(by="Date", ascending=False)
+        
+        event = st.dataframe(df_display, use_container_width=True, on_select="rerun", selection_mode="single-row")
 
         if event.selection.rows:
             idx_sel = event.selection.rows[0]
-            ligne = df_display.iloc[idx_sel]
             vrai_idx = df_display.index[idx_sel]
-            path_j = str(ligne["Justificatif"])
-            st.markdown(f"### 🛠️ Gestion : {ligne['Commentaire']}")
-            g1, g2, g3 = st.columns(3)
-            with g1:
-                if path_j != "Vide" and os.path.exists(path_j):
-                    with open(path_j, "rb") as f: st.download_button("📥 Télécharger", f, file_name=os.path.basename(path_j), key=f"dl_{vrai_idx}")
-                    if st.button("🗑️ Supprimer fichier", key=f"df_{vrai_idx}"):
-                        try: os.remove(path_j)
-                        except: pass
-                        df_compta.at[vrai_idx, "Justificatif"] = "Vide"
-                        df_compta.to_csv(COMPTA_FILE, index=False)
-                        st.rerun()
-                else: st.warning("Pas de fichier.")
-            with g2:
-                new_up = st.file_uploader("Remplacer", type=["pdf","png","jpg","jpeg"], key=f"up_{vrai_idx}")
-                if st.button("💾 Sauvegarder fichier", key=f"sf_{vrai_idx}"):
-                    if new_up:
-                        fp = os.path.join("justificatifs", f"ID_{vrai_idx}_{new_up.name}".replace(" ","_"))
-                        with open(fp, "wb") as f: f.write(new_up.getbuffer())
-                        df_compta.at[vrai_idx, "Justificatif"] = fp
-                        df_compta.to_csv(COMPTA_FILE, index=False)
-                        st.rerun()
-               
-            # --- SUPPRESSION PROPRE DE LA LIGNE ---
-            with st.container():
-                if st.button("🛑 SUPPRIMER LA LIGNE SÉLECTIONNÉE"):
-                    try:
-                        # 1. On supprime la ligne du DataFrame en mémoire
-                        df_compta_clean = df_compta.drop(vrai_idx)
-                        
-                        # 2. On réécrit TOUTE la table dans SQL (le 'replace' écrase l'ancienne)
-                        # C'est la méthode "magique" qui évite les erreurs SQL et les IDs
-                        df_compta_clean.to_sql("compta", conn.engine, if_exists="replace", index=False)
-                        
-                        # 3. Optionnel : si tu veux aussi supprimer le fichier physique associé
-                        if os.path.exists(path_j) and path_j != "Vide":
-                            os.remove(path_j)
-                            
-                        st.success("Ligne supprimée avec succès.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erreur lors de la suppression : {e}")
-
-         elif page == "Compta SCI":
-            st.title("🏢 Gestion Comptable SCI")
-            import os
             
-            # 1. Dossier spécifique
-            DOSSIER_SCI = "justificatifs_sci"
-            if not os.path.exists(DOSSIER_SCI): os.makedirs(DOSSIER_SCI)
-            
-            # 2. Chargement de la table spécifique "compta_sci"
-            df_sci = load_compta_sci() 
-            df_sci["Justificatif"] = df_sci["Justificatif"].astype(str).replace(["nan", "None", ""], "Vide")
-    
-            # 3. Journal des opérations (Tableau de bord)
-            st.subheader("📝 Journal des opérations SCI")
-            df_display = df_sci.sort_values(by="Date", ascending=False)
-            
-            event = st.dataframe(df_display, use_container_width=True, on_select="rerun", selection_mode="single-row")
-    
-            # 4. Suppression de ligne
-            if event.selection.rows:
-                idx_sel = event.selection.rows[0]
-                vrai_idx = df_display.index[idx_sel]
-                
-                if st.button("🛑 SUPPRIMER LA LIGNE SÉLECTIONNÉE", key="del_sci_button"):
-                    try:
-                        # On supprime la ligne dans le DataFrame SCI
-                        df_clean = df_sci.drop(index=vrai_idx)
-                        # On met à jour la base de données SQL "compta_sci"
-                        df_clean.to_sql("compta_sci", conn.engine, if_exists="replace", index=False)
-                        st.success("Ligne supprimée.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erreur : {e}")
+            if st.button("🛑 SUPPRIMER LA LIGNE SÉLECTIONNÉE", key="del_sci_button"):
+                try:
+                    df_clean = df_sci.drop(index=vrai_idx)
+                    df_clean.to_sql("compta_sci", conn.engine, if_exists="replace", index=False)
+                    st.success("Ligne supprimée.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erreur : {e}")
                         
    # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations RNM":
