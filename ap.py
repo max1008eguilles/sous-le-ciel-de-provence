@@ -352,39 +352,39 @@ if check_password():
                     except Exception as e:
                         st.error(f"Erreur lors de la suppression : {e}")
 
-     elif page == "Compta SCI":
-        st.title("🏢 Gestion Comptable SCI")
-        import os
-        
-        # 1. Dossier spécifique
-        DOSSIER_SCI = "justificatifs_sci"
-        if not os.path.exists(DOSSIER_SCI): os.makedirs(DOSSIER_SCI)
-        
-        # 2. Chargement de la table spécifique "compta_sci"
-        df_sci = load_compta_sci() 
-        df_sci["Justificatif"] = df_sci["Justificatif"].astype(str).replace(["nan", "None", ""], "Vide")
-
-        # 3. Journal des opérations (Tableau de bord)
-        st.subheader("📝 Journal des opérations SCI")
-        df_display = df_sci.sort_values(by="Date", ascending=False)
-        
-        event = st.dataframe(df_display, use_container_width=True, on_select="rerun", selection_mode="single-row")
-
-        # 4. Suppression de ligne
-        if event.selection.rows:
-            idx_sel = event.selection.rows[0]
-            vrai_idx = df_display.index[idx_sel]
+         elif page == "Compta SCI":
+            st.title("🏢 Gestion Comptable SCI")
+            import os
             
-            if st.button("🛑 SUPPRIMER LA LIGNE SÉLECTIONNÉE", key="del_sci_button"):
-                try:
-                    # On supprime la ligne dans le DataFrame SCI
-                    df_clean = df_sci.drop(index=vrai_idx)
-                    # On met à jour la base de données SQL "compta_sci"
-                    df_clean.to_sql("compta_sci", conn.engine, if_exists="replace", index=False)
-                    st.success("Ligne supprimée.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erreur : {e}")
+            # 1. Dossier spécifique
+            DOSSIER_SCI = "justificatifs_sci"
+            if not os.path.exists(DOSSIER_SCI): os.makedirs(DOSSIER_SCI)
+            
+            # 2. Chargement de la table spécifique "compta_sci"
+            df_sci = load_compta_sci() 
+            df_sci["Justificatif"] = df_sci["Justificatif"].astype(str).replace(["nan", "None", ""], "Vide")
+    
+            # 3. Journal des opérations (Tableau de bord)
+            st.subheader("📝 Journal des opérations SCI")
+            df_display = df_sci.sort_values(by="Date", ascending=False)
+            
+            event = st.dataframe(df_display, use_container_width=True, on_select="rerun", selection_mode="single-row")
+    
+            # 4. Suppression de ligne
+            if event.selection.rows:
+                idx_sel = event.selection.rows[0]
+                vrai_idx = df_display.index[idx_sel]
+                
+                if st.button("🛑 SUPPRIMER LA LIGNE SÉLECTIONNÉE", key="del_sci_button"):
+                    try:
+                        # On supprime la ligne dans le DataFrame SCI
+                        df_clean = df_sci.drop(index=vrai_idx)
+                        # On met à jour la base de données SQL "compta_sci"
+                        df_clean.to_sql("compta_sci", conn.engine, if_exists="replace", index=False)
+                        st.success("Ligne supprimée.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erreur : {e}")
                         
    # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations RNM":
