@@ -271,34 +271,66 @@ if check_password():
                     df_compta = pd.concat([df_compta, new_entry], ignore_index=True)
                     new_entry.to_sql("compta", conn.engine, if_exists="append", index=False)
                     st.rerun()
+        # ... (reste du code inchangé)
 
-    # 2. Le journal corrigé avec l'éditeur dynamique
         st.divider()
         col_titre, col_zip = st.columns([2, 1])
         with col_titre: st.subheader("📝 Journal des opérations")
         with col_zip:
-            files_to_zip = [f for f in df_display["Justificatif"].tolist() if f != "Vide" and os.path.exists(f)]
+            files_to_zip = [f for f in df_compta["Justificatif"].tolist() if f != "Vide" and os.path.exists(f)]
             if files_to_zip:
                 buf = io.BytesIO()
                 with zipfile.ZipFile(buf, "w") as z:
                     for f in files_to_zip: z.write(f, os.path.basename(f))
                 st.download_button("📦 Télécharger tout (ZIP)", buf.getvalue(), "archive_justificatifs.zip", "application/zip")
 
-        edited_df = st.data_editor(
-            df_display, 
-            use_container_width=True, 
-            num_rows="dynamic", 
-            column_config={"Montant": st.column_config.NumberColumn(format="%.2f €")}
-        )
+        df_display = df_compta[["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"]].sort_values(by="Date", ascending=False)
+        event = st.dataframe(df_display, use_container_width=True, on_select="rerun", selection_mode="single-row",
+                            column_config={"Montant": st.column_config.NumberColumn(format="%.2f €")})
 
-        if st.button("💾 Appliquer les changements (Sauvegarder)"):
-            try:
-                df_to_save = edited_df.reset_index(drop=True)
-                df_to_save.to_sql("compta", conn.engine, if_exists="replace", index=False)
-                st.success("Modifications enregistrées.")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Erreur : {e}")
+        if event.selection.rows:
+            idx_sel = event.selection.rows[0]
+            ligne = df_display.iloc[idx_sel]
+            vrai_idx = df_display.index[idx_sel]
+            path_j = str(ligne["Justificatif"])
+            st.markdown(f"### 🛠️ Gestion : {ligne['Commentaire']}")
+            g1, g2, g3 = st.columns(3)
+            with g1:
+                if path_j != "Vide" and os.path.exists(path_j):
+                    with open(path_j, "rb") as f: st.download_button("📥 Télécharger", f, file_name=os.path.basename(path_j), key=f"dl_{vrai_idx}")
+                    if st.button("🗑️ Supprimer fichier", key=f"df_{vrai_idx}"):
+                        try: os.remove(path_j)
+                        except: pass
+                        df_compta.at[vrai_idx, "Justificatif"] = "Vide"
+                        df_compta.to_csv(COMPTA_FILE, index=False)
+                        st.rerun()
+                else: st.warning("Pas de fichier.")
+            with g2:
+                new_up = st.file_uploader("Remplacer", type=["pdf","png","jpg","jpeg"], key=f"up_{vrai_idx}")
+                if st.button("💾 Sauvegarder fichier", key=f"sf_{vrai_idx}"):
+                    if new_up:
+                        fp = os.path.join("justificatifs", f"ID_{vrai_idx}_{new_up.name}".replace(" ","_"))
+                        with open(fp, "wb") as f: f.write(new_up.getbuffer())
+                        df_compta.at[vrai_idx, "Justificatif"] = fp
+                        df_compta.to_csv(COMPTA_FILE, index=False)
+                        st.rerun()
+               
+            # Ajoutez ceci dans votre mise en page, là où vous voulez le bouton
+            with st.container():
+                if st.button("🛑 SUPPRIMER LA LIGNE SÉLECTIONNÉE"):
+                    # Assurez-vous d'avoir récupéré l'ID de la ligne sélectionnée dans le journal
+                    # Remplacez 'id' par le nom exact trouvé dans Supabase
+                    with conn.session as session:
+                        session.execute(text("DELETE FROM compta WHERE id = :id"), {"id": int(vrai_idx)})
+                        session.commit()
+                    st.success("Ligne supprimée.")
+                    st.rerun()
+            
+    
+            
+            
+
+            
                         
    # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
