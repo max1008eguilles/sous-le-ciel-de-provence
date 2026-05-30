@@ -38,7 +38,7 @@ def check_password():
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        st.title("🏛️ Accès RNM IMMO")
+        st.title("🏛️ Accès RNM IMMO/SCI PHOCEA")
         st.text_input("Identifiant", key="username")
         st.text_input("Mot de passe", type="password", key="password")
         st.button("Se connecter", on_click=password_entered)
