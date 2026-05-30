@@ -273,14 +273,13 @@ if check_password():
                     st.rerun()
         # ... (reste du code inchangé)
 
-        # --- BLOC COMPTA CORRIGÉ AVEC BONNE INDENTATION ---
+        # --- JOURNAL DES OPÉRATIONS (ÉDITEUR DYNAMIQUE) ---
         st.divider()
         col_titre, col_zip = st.columns([2, 1])
         with col_titre: 
             st.subheader("📝 Journal des opérations")
         with col_zip:
-            # Vérifiez que 'df_compta' est bien défini plus haut dans votre code
-            files_to_zip = [f for f in df_compta["Justificatif"].tolist() if f != "Vide" and os.path.exists(f)]
+            files_to_zip = [f for f in df_display["Justificatif"].tolist() if f != "Vide" and os.path.exists(f)]
             if files_to_zip:
                 buf = io.BytesIO()
                 with zipfile.ZipFile(buf, "w") as z:
@@ -302,11 +301,6 @@ if check_password():
                 st.rerun()
             except Exception as e:
                 st.error(f"Erreur lors de la sauvegarde : {e}")
-    
-            
-            
-
-            
                         
    # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
