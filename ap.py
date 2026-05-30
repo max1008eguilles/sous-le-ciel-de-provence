@@ -105,6 +105,7 @@ if check_password():
 
     # Chargement initial des données en direct depuis Supabase
     df_compta = load_compta()
+    df_compta_sci = load_compta_sci()
     df_cfg = load_config()
     df_resa = load_resa()
     df_obj_all = load_objectifs()
