@@ -8,6 +8,7 @@ from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
 from streamlit_calendar import calendar
 from sqlalchemy import text
+from github import Github
 
 # --- INITIALISATION DE LA CONNEXION SQL ---
 conn = st.connection("postgresql", type="sql")
@@ -57,23 +58,20 @@ if check_password():
         except:
             return pd.DataFrame(columns=["Bien", "Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit", "Mensualité", "Durée (mois)", "Taux (%)", "Date Début"])
 
+    # --- FONCTIONS DE CHARGEMENT ---
     def load_compta():
         try:
             df = conn.query("SELECT * FROM compta;", ttl="0m")
-            if not df.empty and "Date" in df.columns:
-                df["Date"] = pd.to_datetime(df["Date"]).dt.date
+            if "Date" in df.columns: df["Date"] = pd.to_datetime(df["Date"]).dt.date
             return df
-        except:
-            return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])
-
+        except: return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])
+    
     def load_compta_sci():
         try:
             df = conn.query("SELECT * FROM compta_sci;", ttl="0m")
-            if not df.empty and "Date" in df.columns:
-                df["Date"] = pd.to_datetime(df["Date"]).dt.date
+            if "Date" in df.columns: df["Date"] = pd.to_datetime(df["Date"]).dt.date
             return df
-        except:
-            return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])
+        except: return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])
            
     # Ajoute ceci juste après ta fonction load_compta
     def load_compta_sci():
@@ -105,7 +103,7 @@ if check_password():
 
     # Chargement initial des données en direct depuis Supabase
     df_compta = load_compta()
-    df_compta_sci = load_compta_sci()
+    df_sci = load_compta_sci()
     df_cfg = load_config()
     df_resa = load_resa()
     df_obj_all = load_objectifs()
@@ -363,8 +361,8 @@ if check_password():
 
         # 1. Chargement des données SCI
         # On utilise une requête SQL explicite pour viser la bonne table
-        df_compta = pd.read_sql("SELECT * FROM compta_sci", conn.engine)
-        df_compta["Justificatif"] = df_compta["Justificatif"].astype(str).replace(["False", "nan", "None", ""], "Vide")
+        df_compta_sci = pd.read_sql("SELECT * FROM compta_sci", conn.engine)
+        df_compta_sci["Justificatif"] = df_compta["Justificatif"].astype(str).replace(["False", "nan", "None", ""], "Vide")
         
         # ... [Insérer ici la fonction calculer_solde et les metrics comme dans RNM] ...
 
