@@ -273,10 +273,13 @@ if check_password():
                     st.rerun()
         # ... (reste du code inchangé)
 
-       st.divider()
+        # --- BLOC COMPTA CORRIGÉ AVEC BONNE INDENTATION ---
+        st.divider()
         col_titre, col_zip = st.columns([2, 1])
-        with col_titre: st.subheader("📝 Journal des opérations")
+        with col_titre: 
+            st.subheader("📝 Journal des opérations")
         with col_zip:
+            # Vérifiez que 'df_compta' est bien défini plus haut dans votre code
             files_to_zip = [f for f in df_compta["Justificatif"].tolist() if f != "Vide" and os.path.exists(f)]
             if files_to_zip:
                 buf = io.BytesIO()
@@ -284,8 +287,6 @@ if check_password():
                     for f in files_to_zip: z.write(f, os.path.basename(f))
                 st.download_button("📦 Télécharger tout (ZIP)", buf.getvalue(), "archive_justificatifs.zip", "application/zip")
 
-        # On utilise st.data_editor pour permettre l'édition et la suppression dynamique
-        # num_rows="dynamic" active la croix rouge pour supprimer les lignes
         edited_df = st.data_editor(
             df_display, 
             use_container_width=True, 
@@ -293,18 +294,10 @@ if check_password():
             column_config={"Montant": st.column_config.NumberColumn(format="%.2f €")}
         )
 
-        # Bouton pour valider les modifications (suppressions ou ajouts)
         if st.button("💾 Appliquer les changements (Sauvegarder)"):
             try:
-                # 1. Calculer la différence entre l'original et l'édité
-                # La méthode la plus simple est de remplacer la table dans la base
-                
-                # On nettoie les données avant de réécrire
                 df_to_save = edited_df.reset_index(drop=True)
-                
-                # Sauvegarde dans PostgreSQL (remplace toute la table)
                 df_to_save.to_sql("compta", conn.engine, if_exists="replace", index=False)
-                
                 st.success("Modifications enregistrées avec succès.")
                 st.rerun()
             except Exception as e:
