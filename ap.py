@@ -141,7 +141,7 @@ if check_password():
         st.title("📂 Navigation")
         
         # Liste de base
-        pages = ["RNM IMMO", "COMPTA", "Réservations", "RO 2026", "Détail 014", "Détail 119", "Ménages"]
+        pages = ["Suivi Immobilier", "Compta RNM", "Compta SCI", "Réservations Courte durée", "Global RNM", "Détail 014", "Détail 119", "Ménages"]
         
         # Ajout conditionnel de la page Patrimoine (Vérifie bien que ton user est "Maxence")
         if user_name == "Maxence":
