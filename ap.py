@@ -371,7 +371,7 @@ if check_password():
         # 2. Journal des opérations (Identique à RNM)
         st.subheader("📝 Journal des opérations SCI")
         
-        df_display = df_compta.sort_values(by="Date", ascending=False)
+        df_display = df_compta_sci.sort_values(by="Date", ascending=False)
         event = st.dataframe(df_display, use_container_width=True, on_select="rerun", selection_mode="single-row")
 
         if event.selection.rows:
