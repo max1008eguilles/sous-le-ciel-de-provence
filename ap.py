@@ -335,54 +335,24 @@ if check_password():
                     except Exception as e:
                         st.error(f"Erreur lors de la suppression : {e}")
 
+    #COMPTA SCI PHOCEA
     elif page == "Compta SCI":
         st.title("🏢 Gestion Comptable SCI")
         import os, zipfile, io
-        if not os.path.exists("justificatifs_sci"): os.makedirs("justificatifs_sci")
+        # Dossier spécifique pour la SCI
+        DOSSIER_SCI = "justificatifs_sci"
+        if not os.path.exists(DOSSIER_SCI): os.makedirs(DOSSIER_SCI)
 
-        # 1. Chargement des données SCI (table spécifique "compta_sci")
+        # 1. Chargement des données SCI
+        # On utilise une requête SQL explicite pour viser la bonne table
         df_compta = pd.read_sql("SELECT * FROM compta_sci", conn.engine)
         df_compta["Justificatif"] = df_compta["Justificatif"].astype(str).replace(["False", "nan", "None", ""], "Vide")
         
-        def calculer_solde(df, compte):
-            temp = df[df["Compte"] == compte].copy()
-            pos = temp[temp["Type"].isin(["Revenu", "Apport"])]["Montant"].sum()
-            neg = temp[temp["Type"].isin(["Dépense", "Crédit", "Remboursement CCA"])]["Montant"].sum()
-            return pos - neg
+        # ... [Insérer ici la fonction calculer_solde et les metrics comme dans RNM] ...
 
-        # Adapte les noms de comptes si nécessaire pour la SCI
-        s_cic = calculer_solde(df_compta, "CIC")
-        s_cash = calculer_solde(df_compta, "Cash")
+        # 2. Journal des opérations (Identique à RNM)
+        st.subheader("📝 Journal des opérations SCI")
         
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Compte SCI", f"{s_cic:,.2f} €")
-        c2.metric("Espèces (Cash)", f"{s_cash:,.2f} €")
-        c3.metric("TOTAL RÉEL", f"{(s_cic + s_cash):,.2f} €")
-
-        # --- AJOUT OPÉRATION ---
-        with st.expander("➕ Saisir une nouvelle opération SCI", expanded=False):
-            with st.form("new_op_form_sci", clear_on_submit=True):
-                col_a, col_b = st.columns(2)
-                f_date = col_a.date_input("Date", date.today())
-                f_type = col_a.selectbox("Type", ["Revenu", "Dépense", "Crédit", "Apport", "Remboursement CCA"])
-                f_cpt = col_b.selectbox("Compte", ["CIC", "Cash"])
-                f_mnt = col_b.number_input("Montant", format="%.2f") 
-                f_com = st.text_input("Commentaire")
-                f_file = st.file_uploader("Joindre le justificatif", type=["pdf","png","jpg","jpeg"])
-                
-                if st.form_submit_button("Valider l'ajout SCI"):
-                    p_file = "Vide"
-                    if f_file:
-                        p_file = os.path.join("justificatifs_sci", f"{f_date}_{f_file.name}".replace(" ","_"))
-                        with open(p_file, "wb") as f: f.write(f_file.getbuffer())
-                    
-                    new_entry = pd.DataFrame([{"Date": str(f_date), "Type": f_type, "Compte": f_cpt, "Montant": f_mnt, "Commentaire": f_com, "Justificatif": p_file}])
-                    # Sauvegarde dans la table 'compta_sci'
-                    new_entry.to_sql("compta_sci", conn.engine, if_exists="append", index=False)
-                    st.rerun()
-
-        # --- JOURNAL ET GESTION (IDENTIQUE) ---
-        st.divider()
         df_display = df_compta.sort_values(by="Date", ascending=False)
         event = st.dataframe(df_display, use_container_width=True, on_select="rerun", selection_mode="single-row")
 
@@ -392,17 +362,23 @@ if check_password():
             ligne = df_display.iloc[idx_sel]
             path_j = str(ligne["Justificatif"])
             
+            # --- BOUTON DE SUPPRESSION (MÊME LOGIQUE) ---
             if st.button("🛑 SUPPRIMER LA LIGNE SÉLECTIONNÉE"):
-                df_compta_clean = df_compta.drop(vrai_idx)
-                # On réécrit la table 'compta_sci' sans la ligne
-                df_compta_clean.to_sql("compta_sci", conn.engine, if_exists="replace", index=False)
-                if os.path.exists(path_j) and path_j != "Vide": os.remove(path_j)
-                st.rerun()
-    
-            
-            
-
-            
+                try:
+                    # Suppression en mémoire
+                    df_clean = df_compta.drop(index=vrai_idx)
+                    
+                    # Réécriture TOTALE de la table 'compta_sci'
+                    df_clean.to_sql("compta_sci", conn.engine, if_exists="replace", index=False)
+                    
+                    # Suppression du fichier physique
+                    if os.path.exists(path_j) and path_j != "Vide":
+                        os.remove(path_j)
+                        
+                    st.success("Ligne supprimée.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erreur : {e}")
                         
    # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations RNM":
