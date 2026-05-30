@@ -74,7 +74,15 @@ if check_password():
             return df
         except:
             return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])
+           
+    # Ajoute ceci juste après ta fonction load_compta
+    def load_compta_sci():
+        try:
+            return conn.query("SELECT * FROM compta_sci;", ttl="0m")
+        except:
+            return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])
 
+    
     def load_resa():
         try:
             df = conn.query("SELECT * FROM reservations;", ttl="0m")
