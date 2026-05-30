@@ -141,7 +141,7 @@ if check_password():
         st.title("📂 Navigation")
         
         # Liste de base
-        pages = ["Suivi Immobilier", "Compta RNM", "Compta SCI", "Réservations Courte durée", "Global RNM", "Détail 014", "Détail 119", "Ménages"]
+        pages = ["Suivi Immobilier", "Compta RNM", "Compta SCI", "Réservations RNM", "Global RNM", "Détail 014", "Détail 119", "Ménages"]
         
         # Ajout conditionnel de la page Patrimoine (Vérifie bien que ton user est "Maxence")
         if user_name == "Maxence":
@@ -155,7 +155,7 @@ if check_password():
             sel_month = st.selectbox("Mois", list(range(1, 13)), index=date.today().month - 1)
 
     # --- PAGE RNM IMMO ---
-    if page == "RNM IMMO":
+    if page == "Suivi Immobilier":
         st.title("🏛️ RNM IMMO - Tableau de Bord")
         if not df_cfg.empty:
             for c in ["Valeur Actuelle", "Prix Achat", "Travaux", "Frais Notaire", "Montant Crédit"]:
@@ -342,7 +342,7 @@ if check_password():
             
                         
    # --- PAGE RÉSERVATIONS ---
-    elif page == "Réservations":
+    elif page == "Réservations RNM":
         st.title("📅 Gestion & Envois")
         
         # Ajout de "Plateforme" dans les colonnes par défaut si la table est vide
