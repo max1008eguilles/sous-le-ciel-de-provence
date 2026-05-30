@@ -59,19 +59,20 @@ if check_password():
 
     # --- FONCTIONS DE CHARGEMENT ---
     def load_compta():
-    try:
-        df = conn.query("SELECT * FROM compta;", ttl="0m")
-        if "Date" in df.columns: df["Date"] = pd.to_datetime(df["Date"]).dt.date
-        return df
-    except: return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])
-
+        try:
+            df = conn.query("SELECT * FROM compta;", ttl="0m")
+            if "Date" in df.columns: df["Date"] = pd.to_datetime(df["Date"]).dt.date
+            return df
+        except: return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])
+    
     def load_compta_sci():
         try:
             df = conn.query("SELECT * FROM compta_sci;", ttl="0m")
             if "Date" in df.columns: df["Date"] = pd.to_datetime(df["Date"]).dt.date
             return df
         except: return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])
-    
+           
+
     def load_resa():
         try:
             df = conn.query("SELECT * FROM reservations;", ttl="0m")
