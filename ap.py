@@ -271,13 +271,11 @@ if check_password():
                     df_compta = pd.concat([df_compta, new_entry], ignore_index=True)
                     new_entry.to_sql("compta", conn.engine, if_exists="append", index=False)
                     st.rerun()
-        # ... (reste du code inchangé)
 
-        # --- JOURNAL DES OPÉRATIONS (ÉDITEUR DYNAMIQUE) ---
+    # 2. Le journal corrigé avec l'éditeur dynamique
         st.divider()
         col_titre, col_zip = st.columns([2, 1])
-        with col_titre: 
-            st.subheader("📝 Journal des opérations")
+        with col_titre: st.subheader("📝 Journal des opérations")
         with col_zip:
             files_to_zip = [f for f in df_display["Justificatif"].tolist() if f != "Vide" and os.path.exists(f)]
             if files_to_zip:
@@ -297,10 +295,10 @@ if check_password():
             try:
                 df_to_save = edited_df.reset_index(drop=True)
                 df_to_save.to_sql("compta", conn.engine, if_exists="replace", index=False)
-                st.success("Modifications enregistrées avec succès.")
+                st.success("Modifications enregistrées.")
                 st.rerun()
             except Exception as e:
-                st.error(f"Erreur lors de la sauvegarde : {e}")
+                st.error(f"Erreur : {e}")
                         
    # --- PAGE RÉSERVATIONS ---
     elif page == "Réservations":
