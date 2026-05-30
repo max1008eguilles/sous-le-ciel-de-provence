@@ -66,14 +66,14 @@ if check_password():
         except:
             return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])
 
-     def load_compta_sci():
+    def load_compta_sci():
         try:
-            # On lit spécifiquement la table 'compta_sci'
-            return pd.read_sql("SELECT * FROM compta_sci", conn.engine)
-        except Exception as e:
-            # Si la table n'existe pas encore, on crée un DataFrame vide avec les colonnes attendues
-            st.warning("La table 'compta_sci' n'existe pas encore. Elle sera créée à la première sauvegarde.")
-            return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])catif"])
+            df = conn.query("SELECT * FROM compta_sci;", ttl="0m")
+            if not df.empty and "Date" in df.columns:
+                df["Date"] = pd.to_datetime(df["Date"]).dt.date
+            return df
+        except:
+            return pd.DataFrame(columns=["Date", "Type", "Compte", "Montant", "Commentaire", "Justificatif"])
 
     def load_resa():
         try:
